@@ -41,55 +41,17 @@ export default function AppPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<{bookmark: Bookmark, score: number}[]>([]);
   
-  // Charger les bookmarks depuis localStorage (source principale)
+  // Charger les bookmarks depuis localStorage uniquement côté client avec useEffect
   React.useEffect(() => {
-    const loadBookmarks = async () => {
-      try {
-        // Charger depuis localStorage (vos anciens bookmarks)
-        const saved = localStorage.getItem('saave_bookmarks');
-        if (saved) {
-          const parsedData = JSON.parse(saved);
-          setBookmarks(parsedData);
-        }
-        
-        // Vérifier s'il y a de nouveaux bookmarks depuis l'extension
-        try {
-          const response = await fetch('/api/bookmarks');
-          if (response.ok) {
-            const apiBookmarks = await response.json();
-            if (Array.isArray(apiBookmarks) && apiBookmarks.length > 0) {
-              // Fusionner avec les bookmarks existants
-              const existingBookmarks = saved ? JSON.parse(saved) : [];
-              const mergedBookmarks = [...existingBookmarks];
-              
-              // Ajouter seulement les nouveaux bookmarks de l'API
-              apiBookmarks.forEach(apiBookmark => {
-                const exists = existingBookmarks.find(b => b.url === apiBookmark.url);
-                if (!exists) {
-                  mergedBookmarks.unshift(apiBookmark); // Ajouter au début
-                }
-              });
-              
-              if (mergedBookmarks.length > existingBookmarks.length) {
-                setBookmarks(mergedBookmarks);
-                localStorage.setItem('saave_bookmarks', JSON.stringify(mergedBookmarks));
-              }
-            }
-          }
-        } catch (apiError) {
-          console.log('API not available, using localStorage only');
-        }
-      } catch (error) {
-        console.error('Error loading bookmarks:', error);
+    try {
+      const saved = localStorage.getItem('saave_bookmarks');
+      if (saved) {
+        const parsedData = JSON.parse(saved);
+        setBookmarks(parsedData);
       }
-    };
-    
-    loadBookmarks();
-    
-    // Vérifier les nouveaux bookmarks toutes les 3 secondes
-    const interval = setInterval(loadBookmarks, 3000);
-    
-    return () => clearInterval(interval);
+    } catch (error) {
+      console.error('Error loading bookmarks from localStorage:', error);
+    }
   }, []);
   const [showMenu, setShowMenu] = useState(false);
   const [contextMenu, setContextMenu] = useState<{

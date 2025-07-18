@@ -96,6 +96,18 @@ export function BookmarkCard({ bookmark, onClick, onRetry, onContextMenu, onDele
           {showThumbnail && bookmark.thumbnail ? (
             <Image src={bookmark.thumbnail} alt="Screenshot" fill sizes="(max-width: 768px) 100vw, 33vw" className="object-cover" />
           ) : renderLoadingPlaceholder()}
+          
+          {/* Cancel button - top right for loading bookmarks */}
+          <button
+            onClick={handleDelete}
+            className="absolute top-2 right-2 bg-red-600 hover:bg-red-700 text-white rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10"
+            title="Cancel and delete this bookmark"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
         </div>
         <div className="p-3 flex-1 flex flex-col">
           {showTitleAndFavicon ? (
@@ -108,8 +120,21 @@ export function BookmarkCard({ bookmark, onClick, onRetry, onContextMenu, onDele
           )}
           <div className="h-4 bg-gray-700 rounded w-full animate-pulse mb-1"></div>
           <div className="h-4 bg-gray-700 rounded w-5/6 animate-pulse"></div>
-          <div className="flex items-center gap-1 text-xs text-gray-500 mt-2">
+          <div className="flex items-center justify-between gap-1 text-xs text-gray-500 mt-2">
             <div className="h-4 bg-gray-700 rounded w-1/4 animate-pulse"></div>
+            
+            {/* Cancel button alternative - bottom right */}
+            <button
+              onClick={handleDelete}
+              className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded-md text-xs transition flex items-center gap-1"
+              title="Cancel processing"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+              Cancel
+            </button>
           </div>
         </div>
       </div>
