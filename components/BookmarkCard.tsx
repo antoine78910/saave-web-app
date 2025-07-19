@@ -47,14 +47,10 @@ export function BookmarkCard({ bookmark, onClick, onRetry, onContextMenu, onDele
   };
 
   const processSteps = [
-    'scraping', 'metadata', 'screenshot', 'describe', 'summary', 'tags', 'saving', 'finished'
+    'scraping', 'metadata', 'screenshot', 'summary', 'tags', 'saving', 'finished'
   ];
 
-  const getProgressPercentage = () => {
-    if (!bookmark.processingStep) return 0;
-    const currentIndex = processSteps.indexOf(bookmark.processingStep as string);
-    return currentIndex === -1 ? 0 : ((currentIndex) / (processSteps.length - 1)) * 100;
-  };
+
 
   const renderPlaceholder = () => (
     <div
@@ -66,25 +62,56 @@ export function BookmarkCard({ bookmark, onClick, onRetry, onContextMenu, onDele
     />
   );
 
-  const renderLoadingPlaceholder = () => (
-    <div
-      className="w-full h-full flex flex-col items-center justify-center p-4"
-      style={{
-        backgroundColor: '#212121',
-        backgroundImage: `repeating-linear-gradient(45deg, #282828, #282828 10px, #212121 10px, #212121 20px)`
-      }}
-    >
-      <div className="text-xs text-center text-gray-300 mb-3">
-        {bookmark.processingStep ? STEPS[bookmark.processingStep as keyof typeof STEPS] : 'Initializing...'}
+  const renderLoadingPlaceholder = () => {
+    const currentStep = bookmark.processingStep as string;
+    const currentIndex = processSteps.indexOf(currentStep);
+    const stepName = STEPS[currentStep as keyof typeof STEPS] || 'Initializing...';
+    const progress = currentIndex >= 0 ? ((currentIndex + 1) / processSteps.length) * 100 : 0;
+    
+    return (
+      <div
+        className="w-full h-full flex flex-col items-center justify-center p-6 relative"
+        style={{
+          backgroundColor: '#1a1a1a',
+          backgroundImage: `repeating-linear-gradient(45deg, #252525, #252525 10px, #1a1a1a 10px, #1a1a1a 20px)`
+        }}
+      >
+        {/* Icône de l'étape actuelle */}
+        <div className="w-16 h-16 rounded-full bg-green-500/20 border-2 border-green-400 flex items-center justify-center mb-4 animate-pulse">
+          <div className="w-8 h-8 rounded-full bg-green-400 flex items-center justify-center">
+            <div className="w-3 h-3 bg-white rounded-full animate-ping"></div>
+          </div>
+        </div>
+        
+        {/* Nom de l'étape avec effet brillant */}
+        <div className="relative mb-4">
+          <div className="text-lg font-semibold text-green-400 relative overflow-hidden">
+            {stepName}
+            {/* Effet brillant animé */}
+            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent transform -skew-x-12 animate-shine"></div>
+          </div>
+        </div>
+        
+        {/* Barre de progression globale */}
+        <div className="w-full max-w-xs mb-3">
+          <div className="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
+            <div 
+              className="h-full bg-gradient-to-r from-green-500 to-green-400 rounded-full transition-all duration-500 ease-out"
+              style={{ width: `${progress}%` }}
+            >
+              {/* Effet de brillant sur la barre */}
+              <div className="w-full h-full bg-gradient-to-r from-transparent via-white/20 to-transparent animate-pulse"></div>
+            </div>
+          </div>
+        </div>
+        
+        {/* Compteur d'étapes */}
+        <div className="text-xs text-gray-400 font-medium">
+          Step {currentIndex + 1} of {processSteps.length}
+        </div>
       </div>
-      <div className="w-3/4 bg-gray-700 rounded-full h-1.5">
-        <div
-          className="bg-amber-500 h-1.5 rounded-full"
-          style={{ width: `${getProgressPercentage()}%` }}
-        ></div>
-      </div>
-    </div>
-  );
+    );
+  };
 
   if (bookmark.status === 'loading') {
     const showTitleAndFavicon = processSteps.indexOf(bookmark.processingStep as string) >= processSteps.indexOf('metadata');
@@ -100,13 +127,10 @@ export function BookmarkCard({ bookmark, onClick, onRetry, onContextMenu, onDele
           {/* Cancel button - top right for loading bookmarks */}
           <button
             onClick={handleDelete}
-            className="absolute top-2 right-2 bg-red-600 hover:bg-red-700 text-white rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10"
-            title="Cancel and delete this bookmark"
+            className="absolute top-2 right-2 bg-gray-800/80 hover:bg-green-600/80 text-white rounded-lg px-2 py-1 opacity-0 group-hover:opacity-100 transition-all duration-200 z-10 text-xs font-medium backdrop-blur-sm"
+            title="Cancel processing"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
+            Cancel
           </button>
         </div>
         <div className="p-3 flex-1 flex flex-col">
@@ -196,13 +220,30 @@ export function BookmarkCard({ bookmark, onClick, onRetry, onContextMenu, onDele
           </svg>
         </button>
       </div>
-      <div className="p-3 flex-1 flex flex-col">
-        <div className="font-semibold text-base truncate">{bookmark.title}</div>
-        <div className="text-muted-foreground text-sm line-clamp-2">{bookmark.description}</div>
-        <div className="flex items-center gap-1 text-xs text-gray-400 mt-2 truncate">
-          <span className="truncate">{domain}</span>
+      <div className="p-3 h-24 flex flex-col justify-between">
+        <div>
+          <div className="font-semibold text-base truncate mb-1">{bookmark.title}</div>
+          <div className={`text-muted-foreground line-clamp-2 ${
+            bookmark.description && bookmark.description.length > 80 
+              ? 'text-xs' 
+              : 'text-sm'
+          }`}>{bookmark.description}</div>
         </div>
-
+        <div className="flex items-center justify-between text-xs text-gray-400">
+          <span className="truncate">{domain}</span>
+          {bookmark.category && (
+            <div 
+              className="px-2 py-1 rounded-full text-xs font-medium flex-shrink-0"
+              style={{ 
+                backgroundColor: `${bookmark.category.color}20`, 
+                color: bookmark.category.color,
+                border: `1px solid ${bookmark.category.color}40`
+              }}
+            >
+              {bookmark.category.name}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

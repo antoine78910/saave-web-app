@@ -4,6 +4,13 @@ import { Trash2 } from "lucide-react";
 import { BookmarkCard } from "./BookmarkCard";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 
+export interface Category {
+  id: string;
+  name: string;
+  color: string;
+  created_at: string;
+}
+
 export interface Bookmark {
   id: string;
   url: string;
@@ -13,6 +20,7 @@ export interface Bookmark {
   favicon?: string | null;
   screenshot?: string;
   tags: string[];
+  category?: Category | null;
   created_at?: string;
   createdAt?: Date;
   isBestMatch?: boolean;

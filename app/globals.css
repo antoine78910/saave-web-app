@@ -60,3 +60,19 @@ All colors MUST be HSL.
     font-family: var(--font-roboto), "Helvetica Neue", Helvetica, Arial, sans-serif;
   }
 }
+
+/* Animation pour l'effet brillant */
+@keyframes shine {
+  0% {
+    transform: translateX(-100%) skewX(-12deg);
+  }
+  100% {
+    transform: translateX(200%) skewX(-12deg);
+  }
+}
+
+@layer utilities {
+  .animate-shine {
+    animation: shine 2s ease-in-out infinite;
+  }
+}
