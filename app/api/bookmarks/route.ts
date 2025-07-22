@@ -1,232 +1,126 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// Types (should match your main app types)
 interface Bookmark {
   id: string;
   url: string;
   title: string;
-  description: string;
-  thumbnail: string | null;
-  favicon: string;
+  description?: string;
+  favicon?: string;
+  thumbnail?: string;
+  tags?: string[];
+  category_id: string | null;
   created_at: string;
-  tags: string[];
-  screenshotDescription: string;
-  summary: string;
-  status: 'loading' | 'complete' | 'error';
-  source?: string;
+  source: string;
+  user_id: string;
 }
 
-// Simple in-memory storage (in production, use a database)
-const bookmarksStore: Bookmark[] = [];
+// Store en mémoire pour les bookmarks par utilisateur
+const bookmarksStore: Map<string, Bookmark[]> = new Map();
 
-// GET endpoint to retrieve all bookmarks
-export async function GET() {
-  try {
-    const response = NextResponse.json(bookmarksStore);
-    
-    // Add CORS headers
-    response.headers.set('Access-Control-Allow-Origin', '*');
-    response.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    response.headers.set('Access-Control-Allow-Headers', 'Content-Type');
-    
-    return response;
-  } catch (error) {
-    console.error('Error retrieving bookmarks:', error);
-    const errorResponse = NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
+export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const userId = searchParams.get('user_id');
+  
+  console.log('GET /api/bookmarks - User ID:', userId);
+  
+  if (!userId) {
+    return NextResponse.json(
+      { error: 'User ID is required' },
+      { status: 400 }
     );
-    
-    // Add CORS headers to error response
-    errorResponse.headers.set('Access-Control-Allow-Origin', '*');
-    errorResponse.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    errorResponse.headers.set('Access-Control-Allow-Headers', 'Content-Type');
-    
-    return errorResponse;
+  }
+  
+  const userBookmarks = bookmarksStore.get(userId) || [];
+  console.log('GET /api/bookmarks - Returning bookmarks for user:', userId, userBookmarks);
+  
+  try {
+    return NextResponse.json(userBookmarks, {
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching bookmarks:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch bookmarks' },
+      { 
+        status: 500,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        },
+      }
+    );
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { url, title, source } = body;
-
-    // Validate required fields
-    if (!url) {
+    const data = await request.json();
+    console.log('POST /api/bookmarks - Received data:', data);
+    
+    if (!data.user_id) {
       return NextResponse.json(
-        { error: 'URL is required' },
+        { error: 'User ID is required' },
         { status: 400 }
       );
     }
-
-    // Validate URL format
-    let parsedUrl: URL;
-    try {
-      parsedUrl = new URL(url);
-    } catch {
-      return NextResponse.json(
-        { error: 'Invalid URL format' },
-        { status: 400 }
-      );
-    }
-
-    // Generate unique ID
-    const bookmarkId = Date.now().toString();
-    const domain = parsedUrl.hostname;
-    const favicon = `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
-
-    // Create initial bookmark object (processing state)
-    const bookmark: Bookmark = {
-      id: bookmarkId,
-      url,
-      title: title || 'Loading...',
-      description: '',
-      thumbnail: null,
-      favicon,
+    
+    // Créer un nouveau bookmark avec toutes les métadonnées
+    const newBookmark: Bookmark = {
+      id: crypto.randomUUID(),
+      url: data.url,
+      title: data.title,
+      description: data.description || '',
+      favicon: data.favicon || '',
+      thumbnail: data.thumbnail || '',
+      tags: Array.isArray(data.tags) ? data.tags : [],
+      category_id: data.category_id || null,
       created_at: new Date().toISOString(),
-      tags: [],
-      screenshotDescription: '',
-      summary: '',
-      status: 'loading',
-      source: source || 'extension'
+      source: data.source || 'webapp',
+      user_id: data.user_id
     };
-
-    // Add to store
-    bookmarksStore.push(bookmark);
-
-    // Start background processing (similar to your main app)
-    processBookmarkAsync(bookmark);
-
-    const response = NextResponse.json({
-      success: true,
-      bookmark,
-      message: 'Bookmark saved and processing started'
+    
+    // Ajouter le bookmark au store de l'utilisateur
+    const userBookmarks = bookmarksStore.get(data.user_id) || [];
+    userBookmarks.push(newBookmark);
+    bookmarksStore.set(data.user_id, userBookmarks);
+    
+    console.log('Bookmark added for user:', data.user_id, newBookmark);
+    
+    return NextResponse.json(newBookmark, {
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      },
     });
-    
-    // Add CORS headers
-    response.headers.set('Access-Control-Allow-Origin', '*');
-    response.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    response.headers.set('Access-Control-Allow-Headers', 'Content-Type');
-    
-    return response;
-
   } catch (error) {
-    console.error('Error saving bookmark:', error);
-    const errorResponse = NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
-    
-    // Add CORS headers to error response
-    errorResponse.headers.set('Access-Control-Allow-Origin', '*');
-    errorResponse.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    errorResponse.headers.set('Access-Control-Allow-Headers', 'Content-Type');
-    
-    return errorResponse;
-  }
-}
-
-// Background processing function (similar to your main app logic)
-async function processBookmarkAsync(bookmark: Bookmark) {
-  try {
-    // Step 1: Take screenshot
-    const screenshotResponse = await fetch(`${getBaseUrl()}/api/screenshot`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: bookmark.url })
-    });
-
-    let thumbnail = null;
-    if (screenshotResponse.ok) {
-      const screenshotData = await screenshotResponse.json();
-      thumbnail = screenshotData.screenshot;
-    }
-
-    // Step 2: Extract metadata
-    const metadataResponse = await fetch(`${getBaseUrl()}/api/extract-metadata`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: bookmark.url })
-    });
-
-    let metadataData = {};
-    if (metadataResponse.ok) {
-      metadataData = await metadataResponse.json();
-    }
-
-    // Step 3: Generate AI summary (if screenshot available)
-    let screenshotDescription = '';
-    let summary = '';
-    
-    if (thumbnail) {
-      const aiResponse = await fetch(`${getBaseUrl()}/api/ai-analysis`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          screenshot: thumbnail,
-          url: bookmark.url,
-          title: bookmark.title 
-        })
-      });
-
-      if (aiResponse.ok) {
-        const aiData = await aiResponse.json();
-        screenshotDescription = aiData.screenshotDescription || '';
-        summary = aiData.summary || '';
+    console.error('Error adding bookmark:', error);
+    return NextResponse.json(
+      { error: 'Failed to add bookmark' },
+      { 
+        status: 500,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        },
       }
-    }
-
-    // Final bookmark object
-    const metadata = metadataData as { title?: string; description?: string; tags?: string[] };
-    const updatedBookmark: Bookmark = {
-      ...bookmark,
-      title: metadata.title || bookmark.title,
-      description: metadata.description || '',
-      thumbnail,
-      tags: metadata.tags || [],
-      screenshotDescription,
-      summary,
-      status: 'complete'
-    };
-
-    // Update bookmark in store
-    const index = bookmarksStore.findIndex(b => b.id === bookmark.id);
-    if (index !== -1) {
-      bookmarksStore[index] = updatedBookmark;
-    }
-    
-    console.log('Bookmark processed:', updatedBookmark);
-
-  } catch (error) {
-    console.error('Error processing bookmark:', error);
-    // Update bookmark status to error in store
-    const index = bookmarksStore.findIndex(b => b.id === bookmark.id);
-    if (index !== -1) {
-      bookmarksStore[index] = { ...bookmark, status: 'error' };
-    }
-    
-    console.log('Bookmark processing failed:', bookmark.id);
+    );
   }
 }
 
-// Helper function to get base URL
-function getBaseUrl(): string {
-  if (process.env.NODE_ENV === 'production') {
-    return process.env.NEXT_PUBLIC_BASE_URL || 'https://your-domain.com';
-  }
-  return 'http://localhost:3000';
-}
-
-
-
-// Enable CORS for the extension
 export async function OPTIONS() {
   return new NextResponse(null, {
     status: 200,
     headers: {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     },
   });
 }

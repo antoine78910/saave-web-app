@@ -4,7 +4,7 @@ import next from 'next';
 
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = process.env.HOST || 'localhost';
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 3001; // Changed to 3001
 
 // Préparer l'application Next.js
 const app = next({ dev, hostname, port });
@@ -13,6 +13,18 @@ const handle = app.getRequestHandler();
 app.prepare().then(() => {
   createServer(async (req, res) => {
     try {
+      // Ajouter les headers CORS
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, DELETE');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept');
+      
+      // Gérer les requêtes OPTIONS pour le pre-flight CORS
+      if (req.method === 'OPTIONS') {
+        res.writeHead(200);
+        res.end();
+        return;
+      }
+
       // Extraire et parser l'URL
       const parsedUrl = parse(req.url, true);
       

@@ -1,0 +1,52 @@
+{
+  "manifest_version": 3,
+  "name": "Saave - Quick Bookmark",
+  "version": "1.0.0",
+  "description": "Ajoutez instantanément des bookmarks à votre collection Saave d'un simple clic",
+  
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting",
+    "notifications"
+  ],
+  
+  "host_permissions": [
+    "http://localhost:3000/*",
+    "http://localhost:3001/*",
+    "http://localhost:3002/*",
+    "http://localhost:3003/*",
+    "http://localhost:3004/*",
+    "http://localhost:3005/*",
+    "http://localhost:3006/*",
+    "http://localhost:3007/*",
+    "http://localhost:3008/*",
+    "http://localhost:3009/*",
+    "http://localhost:3010/*",
+    "https://*/*",
+    "http://*/*"
+  ],
+  
+  "action": {
+    "default_title": "Ajouter à Saave",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  
+  "background": {
+    "service_worker": "background.js"
+  },
+  
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}

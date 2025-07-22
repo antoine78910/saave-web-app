@@ -169,7 +169,7 @@ export const AddBookmarkDialog = ({ onAdd, showTrigger = true }: AddBookmarkDial
         }
       }
 
-      const bookmarkData = {
+      const bookmark = {
         url: url.trim(),
         title: finalTitle || "Untitled",
         description,
@@ -180,12 +180,9 @@ export const AddBookmarkDialog = ({ onAdd, showTrigger = true }: AddBookmarkDial
 
       // If onAdd is provided (from /app), use it, otherwise navigate to /app
       if (onAdd) {
-        onAdd(bookmarkData);
+        onAdd(bookmark);
       } else {
-        // Store bookmark data and navigate to app
-        sessionStorage.setItem('newBookmark', JSON.stringify(bookmarkData));
         router.push('/app');
-        return;
       }
 
       // Reset form

@@ -1,8 +1,57 @@
 "use client";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { loadStripe } from '@stripe/stripe-js';
+import { useSubscription } from "../../src/hooks/useSubscription";
+
+// Initialiser Stripe 
+const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
 
 export default function UpgradePage() {
   const [yearly, setYearly] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
+  const userEmail = 'anto.delbos@gmail.com'; // À remplacer par ton système d'auth
+  const { subscription, loading: subscriptionLoading } = useSubscription(userEmail);
+
+  // Si l'utilisateur est déjà Pro, rediriger vers l'app
+  if (subscription?.plan === 'pro') {
+    router.push('/app');
+    return null;
+  }
+
+  const handleUpgrade = async () => {
+    setLoading(true);
+    
+    try {
+      // Créer une session de checkout
+      const response = await fetch('/api/stripe/checkout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: userEmail,
+          yearly: yearly, // Envoyer l'information du plan choisi
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to create checkout session');
+      }
+
+      const { url } = await response.json();
+      
+      // Rediriger vers Stripe Checkout
+      window.location.href = url;
+      
+    } catch (error) {
+      console.error('Error:', error);
+      alert('Something went wrong. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#181a1b] text-white flex flex-col items-center px-4 py-12">
@@ -87,7 +136,13 @@ export default function UpgradePage() {
                 Support of a creator
               </li>
             </ul>
-            <button className="bg-accent px-8 py-3 rounded-xl text-lg font-semibold text-white shadow hover:bg-accent/90 transition w-full">Upgrade</button>
+            <button 
+              onClick={handleUpgrade}
+              disabled={loading || subscriptionLoading}
+              className="bg-accent px-8 py-3 rounded-xl text-lg font-semibold text-white shadow hover:bg-accent/90 transition w-full disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? 'Processing...' : 'Upgrade'}
+            </button>
           </div>
         </div>
       </div>

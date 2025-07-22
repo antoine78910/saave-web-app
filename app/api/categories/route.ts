@@ -3,14 +3,14 @@ import { NextRequest, NextResponse } from 'next/server';
 interface Category {
   id: string;
   name: string;
-  color: string;
   created_at: string;
 }
 
-// Store en mémoire pour les catégories (comme pour les bookmarks)
+// Store en mémoire pour les catégories
 const categoriesStore: Category[] = [];
 
 export async function GET() {
+  console.log('GET /api/categories - Returning categories:', categoriesStore);
   try {
     return NextResponse.json(categoriesStore, {
       headers: {
@@ -37,23 +37,27 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const category = await request.json();
+    const data = await request.json();
+    console.log('POST /api/categories - Received data:', data);
+    
+    // Créer une nouvelle catégorie avec ID et timestamp
+    const newCategory: Category = {
+      id: crypto.randomUUID(),
+      name: data.name,
+      created_at: new Date().toISOString()
+    };
     
     // Ajouter la catégorie au store
-    categoriesStore.push(category);
+    categoriesStore.push(newCategory);
+    console.log('Category added:', newCategory);
     
-    console.log('Category added:', category);
-    
-    return NextResponse.json(
-      { success: true, category },
-      {
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-        },
-      }
-    );
+    return NextResponse.json(newCategory, {
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      },
+    });
   } catch (error) {
     console.error('Error adding category:', error);
     return NextResponse.json(

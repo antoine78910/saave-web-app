@@ -3,20 +3,28 @@
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import BookmarkContextMenu from "../../components/BookmarkContextMenu";
-import BookmarkDetailPopup from "../../components/BookmarkDetailPopup";
+import BookmarkPopup from "../../components/BookmarkPopup";
 import BookmarkProgressBar, { BookmarkProcessStep } from "../../components/BookmarkProgressBar";
 import { BookmarkCard } from "../../components/BookmarkCard";
 import { Bookmark } from "../../components/BookmarkGrid";
 import { ToastManager, ToastItem } from "../../components/Toast";
+import { useSubscription } from "../../src/hooks/useSubscription";
+import { useAuth } from "../../src/hooks/useAuth";
+import UserMenu from "../../components/UserMenu";
 
 type BookmarkStatus = 'loading' | 'complete' | 'error';
 
-const demoBookmarks: Bookmark[] = [];
-
-
-
 export default function AppPage() {
+  const { user, loading: authLoading, signOut } = useAuth();
+  const router = useRouter();
+  
+  // Rediriger vers auth si pas connecté
+  React.useEffect(() => {
+    if (!authLoading && !user) {
+      router.push('/auth');
+    }
+  }, [authLoading, user, router]);
+
   // État pour les notifications toast
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   
@@ -35,31 +43,64 @@ export default function AppPage() {
   };
   
   // Initialiser avec un tableau vide pour éviter les erreurs d'hydratation
-  const [bookmarks, setBookmarks] = useState<Bookmark[]>(demoBookmarks);
+  const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   
   // État pour la recherche
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<{bookmark: Bookmark, score: number}[]>([]);
   
-  // Charger les bookmarks depuis localStorage uniquement côté client avec useEffect
-  React.useEffect(() => {
-    try {
-      const saved = localStorage.getItem('saave_bookmarks');
-      if (saved) {
-        const parsedData = JSON.parse(saved);
-        setBookmarks(parsedData);
+  // Charger les bookmarks de l'utilisateur depuis l'API
+  const loadUserBookmarks = React.useCallback(async () => {
+    if (user?.id) {
+      try {
+        const response = await fetch(`/api/bookmarks?user_id=${user.id}`);
+        if (response.ok) {
+          const userBookmarks = await response.json();
+          setBookmarks(userBookmarks);
+        }
+      } catch (error) {
+        console.error('Error loading user bookmarks:', error);
       }
-    } catch (error) {
-      console.error('Error loading bookmarks from localStorage:', error);
     }
-  }, []);
+  }, [user?.id]);
+
+  React.useEffect(() => {
+    loadUserBookmarks();
+  }, [loadUserBookmarks]);
+
+  // Recharger les bookmarks toutes les 5 secondes pour détecter les ajouts de l'extension
+  React.useEffect(() => {
+    if (user?.id) {
+      const interval = setInterval(() => {
+        loadUserBookmarks();
+      }, 5000); // Recharger toutes les 5 secondes
+
+      return () => clearInterval(interval);
+    }
+  }, [user?.id, loadUserBookmarks]);
+
   const [showMenu, setShowMenu] = useState(false);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
     bookmark: Bookmark | null;
-    visible: boolean;
-  }>({ x: 0, y: 0, bookmark: null, visible: false });
+  } | null>(null);
+  
+
+  const [selectedBookmark, setSelectedBookmark] = useState<Bookmark | null>(null);
+  
+  const [currentProgress, setCurrentProgress] = useState<{
+    step: BookmarkProcessStep;
+    url: string;
+    domain: string;
+    title?: string;
+    description?: string;
+    summary?: string;
+    thumbnail?: string;
+  }>({ step: 'idle', url: '', domain: '' });
+  
+  const userName = user?.email?.split('@')[0] || 'User';
+  const userEmail = user?.email || 'No email';
   
   // Fonction de recherche intelligente
   const searchBookmarks = React.useCallback((query: string) => {
@@ -115,11 +156,6 @@ export default function AppPage() {
     searchBookmarks(searchQuery);
   }, [searchQuery, searchBookmarks]);
   
-  const [detailPopup, setDetailPopup] = useState<{
-    bookmark: Bookmark | null;
-    visible: boolean;
-  }>({ bookmark: null, visible: false });
-  
   // État pour l'URL en cours de saisie et son favicon
   const [inputUrl, setInputUrl] = useState('');
   const [inputFavicon, setInputFavicon] = useState('');
@@ -133,9 +169,9 @@ export default function AppPage() {
     favicon?: string;
     thumbnail?: string;
   }>({ step: 'idle', url: '', domain: '' });
-  const userName = '';
-  const userEmail = 'anto.delbos@gmail.com';
-  const router = useRouter();
+  
+  // Hook pour gérer l'abonnement
+  const { subscription, loading: subscriptionLoading, canAddBookmark, getRemainingBookmarks } = useSubscription(userEmail);
 
   // Surveiller les nouveaux bookmarks et afficher des notifications
   React.useEffect(() => {
@@ -143,7 +179,6 @@ export default function AppPage() {
       // Si c'est un nouveau bookmark en cours de traitement
       if (bookmark.status === 'loading' && !processingBookmarks.has(bookmark.id)) {
         setProcessingBookmarks(prev => new Set(prev).add(bookmark.id));
-        addToast(`📚 Processing bookmark: ${bookmark.title}`, 'info', 5000);
       }
       // Si un bookmark a fini de se traiter
       else if (bookmark.status === 'complete' && processingBookmarks.has(bookmark.id)) {
@@ -152,7 +187,6 @@ export default function AppPage() {
           newSet.delete(bookmark.id);
           return newSet;
         });
-        addToast(`✅ Bookmark saved: ${bookmark.title}`, 'success', 4000);
       }
       // Si un bookmark a échoué
       else if (bookmark.status === 'error' && processingBookmarks.has(bookmark.id)) {
@@ -161,10 +195,9 @@ export default function AppPage() {
           newSet.delete(bookmark.id);
           return newSet;
         });
-        addToast(`❌ Failed to process: ${bookmark.title}`, 'error', 4000);
       }
     });
-  }, [bookmarks, processingBookmarks, addToast]);
+  }, [bookmarks, processingBookmarks]);
 
   // Sauvegarde automatique des bookmarks dans localStorage
   React.useEffect(() => {
@@ -172,6 +205,194 @@ export default function AppPage() {
       localStorage.setItem('saave_bookmarks', JSON.stringify(bookmarks));
     }
   }, [bookmarks]);
+
+  // Dans la fonction handleAddBookmark
+  const handleAddBookmark = async (url: string) => {
+    // Vérifier si l'utilisateur peut ajouter un bookmark
+    if (!canAddBookmark(bookmarks.length)) {
+      addToast(
+        `You've reached your limit of ${subscription?.bookmarkLimit} bookmarks. Upgrade to Pro for unlimited bookmarks!`, 
+        'error', 
+        5000
+      );
+      router.push('/upgrade');
+      return;
+    }
+
+    if (!user?.id) {
+      addToast('You must be logged in to add bookmarks', 'error');
+      return;
+    }
+
+    const bookmarkId = Date.now().toString();
+    let content = '';
+    let title = '';
+    let description = '';
+    let favicon = '';
+    let thumbnail = '';
+    let tags: string[] = [];
+    
+    try {
+      // Ajouter le bookmark initial avec le statut "loading"
+      const newBookmark: Bookmark = {
+        id: bookmarkId,
+        url,
+        title: 'Loading...',
+        description: '',
+        tags: [],
+        status: 'loading',
+        processingStep: 'scraping',
+        createdAt: new Date(),
+      };
+      
+      setBookmarks(prev => [newBookmark, ...prev]);
+      
+      // Fonction utilitaire pour mettre à jour l'étape de traitement
+      const updateBookmarkStep = (step: BookmarkProcessStep, updates: Partial<Bookmark> = {}) => {
+        setBookmarks(prev => prev.map(b => 
+          b.id === bookmarkId 
+            ? { ...b, processingStep: step, ...updates }
+            : b
+        ));
+        setCurrentProgress(prev => ({ ...prev, step }));
+      };
+
+      // Extraction du domaine
+      const domain = new URL(url).hostname;
+      setCurrentProgress({
+        step: 'scraping' as BookmarkProcessStep,
+        url,
+        domain: domain.replace('www.', '')
+      });
+      
+      // Scraping du contenu
+      try {
+        updateBookmarkStep('scraping');
+        const response = await fetch('/api/scrape', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url })
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          content = data.content;
+        }
+      } catch (error) {
+        console.error('Error during scraping:', error);
+      }
+      
+      // Extraction des métadonnées
+      try {
+        updateBookmarkStep('metadata');
+        const metadataResponse = await fetch('/api/extract-metadata', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url, content })
+        });
+        
+        if (metadataResponse.ok) {
+          const data = await metadataResponse.json();
+          title = data.title || domain.replace('www.', '');
+          description = data.description || 'No description available';
+          favicon = data.favicon || '';
+          tags = Array.isArray(data.tags) ? data.tags : [];
+          console.log('Metadata extracted:', { title, description, favicon, tags });
+          updateBookmarkStep('metadata', { title, description, favicon, tags });
+        } else {
+          console.warn('Metadata extraction failed, using fallback');
+          title = domain.replace('www.', '');
+          description = 'No description available';
+        }
+      } catch (error) {
+        console.error('Error during metadata extraction:', error);
+        title = domain.replace('www.', '');
+        description = 'No description available';
+      }
+      
+      // Capture d'écran
+      try {
+        updateBookmarkStep('screenshot');
+        const screenshotResponse = await fetch('/api/screenshot', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url })
+        });
+        
+        if (screenshotResponse.ok) {
+          const data = await screenshotResponse.json();
+          thumbnail = data.url;
+          updateBookmarkStep('screenshot', { thumbnail });
+        }
+      } catch (error) {
+        console.error('Error during screenshot:', error);
+      }
+      
+      // Sauvegarde via API
+      updateBookmarkStep('saving');
+      
+      const bookmarkData = {
+        url,
+        title: title || domain.replace('www.', ''),
+        description: description || 'No description available',
+        favicon,
+        thumbnail,
+        tags,
+        user_id: user.id,
+        source: 'webapp'
+      };
+
+      console.log('Saving bookmark with data:', bookmarkData);
+
+      const saveResponse = await fetch('/api/bookmarks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bookmarkData)
+      });
+
+      if (!saveResponse.ok) {
+        throw new Error('Failed to save bookmark to server');
+      }
+
+      const savedBookmark = await saveResponse.json();
+      console.log('Bookmark saved successfully:', savedBookmark);
+      
+      // Finalisation
+      updateBookmarkStep('finished');
+      
+      // Marquer comme terminé avec toutes les données collectées
+      const finalBookmark: Bookmark = {
+        id: savedBookmark.id, // Utiliser l'ID du serveur
+        url,
+        title: title || domain.replace('www.', ''),
+        description: description || 'No description available',
+        favicon,
+        thumbnail,
+        tags,
+        status: 'complete',
+        createdAt: new Date(savedBookmark.created_at),
+        processingStep: 'finished'
+      };
+
+      setBookmarks(prev => prev.map(b => 
+        b.id === bookmarkId ? finalBookmark : b
+      ));
+      
+      setCurrentProgress({ step: 'idle' as BookmarkProcessStep, url: '', domain: '' });
+      
+      addToast('Bookmark added successfully!', 'success');
+      
+    } catch (error: any) {
+      console.error('Error adding bookmark:', error);
+      setBookmarks(prev => prev.map(b => 
+        b.id === bookmarkId 
+          ? { ...b, status: 'error', error: error.message }
+          : b
+      ));
+      setCurrentProgress(prev => ({ ...prev, step: 'error' as BookmarkProcessStep }));
+      addToast(`Failed to add bookmark: ${error.message}`, 'error');
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#181a1b] text-white flex flex-col items-center px-4 py-8">
@@ -184,43 +405,55 @@ export default function AppPage() {
         <div className="flex-1" />
         {/* Actions à droite */}
         <div className="flex items-center gap-2">
-          {/* Indicateur de traitement */}
-          {processingBookmarks.size > 0 && (
-            <div className="inline-flex items-center justify-center whitespace-nowrap text-sm font-medium h-8 rounded-md gap-1.5 px-3 bg-blue-600/20 text-blue-400 border border-blue-600/30">
-              <div className="w-3 h-3 border border-blue-400 border-t-transparent rounded-full animate-spin"></div>
-              Processing {processingBookmarks.size}
-            </div>
-          )}
           {/* Compteur */}
           <button className="inline-flex items-center justify-center whitespace-nowrap text-sm font-medium transition-all border bg-[#232526] shadow-xs hover:bg-accent hover:text-white h-8 rounded-md gap-1.5 px-3 border-accent text-accent font-bold">
-            {bookmarks.length}/20
-          </button>
-          {/* Upgrade */}
-          <a href="/upgrade" className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all border bg-[#232526] shadow-xs hover:bg-accent hover:text-white h-8 px-3 border-accent text-accent font-bold">
-            Upgrade
-          </a>
-          {/* Compte utilisateur avec menu déroulant */}
-          <div className="relative">
-            <button id="account-btn" className="inline-flex items-center justify-center rounded-md border bg-[#232526] shadow-xs hover:bg-accent hover:text-white h-8 px-3 text-sm font-medium" onClick={() => setShowMenu(m => !m)}>
-              {userName || userEmail}
-            </button>
-            {showMenu && (
-              <div className="absolute right-0 mt-2 w-48 bg-[#232526] rounded-lg shadow-lg border border-gray-700 z-50">
-                <button onClick={() => { setShowMenu(false); router.push('/account'); }} className="w-full flex items-center gap-2 px-4 py-2 text-left hover:bg-gray-800 text-white">
-                  <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5.121 17.804A13.937 13.937 0 0112 15c2.5 0 4.847.655 6.879 1.804M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                  Account
-                </button>
-                <button onClick={() => { setShowMenu(false); router.push('/billing'); }} className="w-full flex items-center gap-2 px-4 py-2 text-left hover:bg-gray-800 text-white">
-                  <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M3 6h18M3 14h18M3 18h18" /></svg>
-                  Billing
-                </button>
-                <button onClick={() => { setShowMenu(false); }} className="w-full flex items-center gap-2 px-4 py-2 text-left hover:bg-gray-800 text-white border-t border-gray-700">
-                  <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
-                  Sign out
-                </button>
-              </div>
+            {subscriptionLoading ? (
+              'Loading...'
+            ) : (
+              subscription?.plan === 'pro' ? (
+                `${bookmarks.length}/∞`
+              ) : (
+                `${bookmarks.length}/${subscription?.bookmarkLimit || 20}`
+              )
             )}
-          </div>
+          </button>
+          {/* Upgrade - Ne s'affiche que si l'utilisateur n'est pas Pro */}
+          {subscription?.plan !== 'pro' && (
+            <a href="/upgrade" className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all border bg-[#232526] shadow-xs hover:bg-accent hover:text-white h-8 px-3 border-accent text-accent font-bold">
+              Upgrade
+            </a>
+          )}
+          {/* Bouton Billing pour les utilisateurs Pro */}
+          {subscription?.plan === 'pro' && (
+            <button 
+              onClick={async () => {
+                if (subscription.customerId) {
+                  try {
+                    const response = await fetch('/api/stripe/portal', {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                      },
+                      body: JSON.stringify({ customerId: subscription.customerId }),
+                    });
+                    
+                    if (response.ok) {
+                      const { url } = await response.json();
+                      window.location.href = url;
+                    }
+                  } catch (error) {
+                    console.error('Error opening billing portal:', error);
+                    addToast('Failed to open billing portal', 'error');
+                  }
+                }
+              }}
+              className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all border bg-green-600 shadow-xs hover:bg-green-700 text-white h-8 px-3 font-bold"
+            >
+              Billing
+            </button>
+          )}
+          {/* Menu utilisateur */}
+          <UserMenu userEmail={userEmail} onSignOut={signOut} />
         </div>
       </nav>
 
@@ -267,176 +500,21 @@ export default function AppPage() {
               }
               
               try {
-                const parsed = new URL(url);
-                // État de chargement
-                const loadingId = Date.now().toString();
-                const domain = parsed.hostname.replace('www.', '');
-                
-                // Créer d'abord un bookmark temporaire avec état de chargement
-                const tempBookmark: Bookmark = {
-                  id: loadingId,
-                  url,
-                  title: domain,
-                  description: "Chargement en cours...",
-                  thumbnail: null,
-                  created_at: new Date().toISOString(),
-                  tags: [],
-                  status: 'loading',
-                };
-                
-                setBookmarks((bms) => [tempBookmark, ...bms]);
-                
-                // Initialiser l'état du processus
-                setProcessState({
-                  step: 'scraping',
-                  url,
-                  domain
-                });
-                
                 // Réinitialiser le formulaire immédiatement
                 setInputUrl('');
                 setInputFavicon('');
-
-                // Processing order according to specifications
-                try {
-                  // 1. Scraping page content
-                  setProcessState(prev => ({ ...prev, step: 'scraping' }));
-                  await new Promise(r => setTimeout(r, 500)); // To show animation
-                  
-                  const contentRes = await fetch('/api/scrape', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url })
-                  });
-                  const contentData = await contentRes.json();
-                  
-                  // 2. Extracting metadata
-                  setProcessState(prev => ({ ...prev, step: 'metadata' }));
-                  await new Promise(r => setTimeout(r, 500));
-                  
-                  // Extracting metadata with dedicated API
-                  const metadataRes = await fetch('/api/extract-metadata', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url })
-                  });
-                  const metadataData = await metadataRes.json();
-                  
-                  const title = metadataData.title || contentData.title || parsed.hostname.replace('www.', '');
-                  const description = metadataData.description || contentData.description || "";
-                  const favicon = metadataData.favicon || null;
-                  
-                  // Mettre à jour l'état avec le titre et le favicon
-                  setProcessState(prev => ({ ...prev, step: 'metadata', title, favicon }));
-                  await new Promise(r => setTimeout(r, 500));
-                  
-                  // 3. Taking screenshot
-                  setProcessState(prev => ({ ...prev, step: 'screenshot' }));
-                  await new Promise(r => setTimeout(r, 500));
-                  
-                  const screenshotRes = await fetch('/api/screenshot', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url })
-                  });
-                  const screenshotData = await screenshotRes.json();
-                  const thumbnail = screenshotData.url || null;
-                  
-                  // Mettre à jour l'état avec la vignette
-                  setProcessState(prev => ({ ...prev, step: 'screenshot', thumbnail }));
-                  await new Promise(r => setTimeout(r, 500));
-                  
-                  // 4. Describing screenshot
-                  setProcessState(prev => ({ ...prev, step: 'describe' }));
-                  await new Promise(r => setTimeout(r, 500));
-                  
-                  const screenshotDescription = "Screenshot of the page";
-                  
-                  // 5. Summarizing page
-                  setProcessState(prev => ({ ...prev, step: 'summary' }));
-                  await new Promise(r => setTimeout(r, 500));
-                  
-                  const summary = contentData.summary || description || "No summary available";
-                  
-                  // 6. Finding relevant tags
-                  setProcessState(prev => ({ ...prev, step: 'tags' }));
-                  await new Promise(r => setTimeout(r, 500));
-                  
-                  const suggestedTags = metadataData.tags || [];
-                  
-                  // 7. Saving bookmark with all information
-                  setProcessState(prev => ({ ...prev, step: 'saving' }));
-                  await new Promise(r => setTimeout(r, 500));
-                  
-                  const updatedBookmark: Bookmark = {
-                    id: loadingId,
-                    url,
-                    title,
-                    description,
-                    thumbnail: thumbnail || null,
-                    favicon,
-                    created_at: new Date().toISOString(),
-                    tags: suggestedTags,
-                    screenshotDescription,
-                    summary,
-                    status: 'complete' as BookmarkStatus,
-                  };
-                  
-                  setBookmarks((currentBookmarks) => {
-                    const updatedBookmarks = currentBookmarks.map(b => 
-                      b.id === loadingId ? updatedBookmark : b
-                    );
-                    // Mettre à jour localStorage
-                    localStorage.setItem('saave_bookmarks', JSON.stringify(updatedBookmarks));
-                    // Afficher une notification de succès
-                    addToast(`Bookmark ajouté : ${title}`, 'success');
-                    return updatedBookmarks;
-                  });
-                  
-                  // 8. Finishing
-                  setProcessState(prev => ({ ...prev, step: 'finished' }));
-                  await new Promise(r => setTimeout(r, 1000));
-                  
-                  // Réinitialiser l'état du processus
-                  setTimeout(() => {
-                    setProcessState({ step: 'idle', url: '', domain: '' });
-                  }, 500);
-                } catch {
-                  // En cas d'erreur, mettre à jour le bookmark avec un état d'erreur
-                  setProcessState(prev => ({ ...prev, step: 'error' }));
-                  
-                  setBookmarks((currentBookmarks) => {
-                    const errorBookmarks = currentBookmarks.map(b => {
-                      if (b.id === loadingId) {
-                        return {
-                          ...b,
-                          description: "Une erreur s'est produite lors du traitement.",
-                          status: 'error' as BookmarkStatus,
-                        };
-                      }
-                      return b;
-                    });
-                    // Mettre à jour localStorage
-                    localStorage.setItem('saave_bookmarks', JSON.stringify(errorBookmarks));
-                    // Afficher une notification d'erreur
-                    addToast(`Erreur lors de l'ajout du bookmark`, 'error');
-                    return errorBookmarks;
-                  });
-                  
-                  // Réinitialiser l'état du processus après un moment
-                  setTimeout(() => {
-                    setProcessState({ step: 'idle', url: '', domain: '' });
-                  }, 3000);
-                }
-              } catch {
-                // URL invalide: ne pas afficher d'alert, simplement ignorer
-                console.log("URL invalide:", formUrl);
+                
+                // Utiliser la fonction handleAddBookmark
+                await handleAddBookmark(url);
+              } catch (error) {
+                console.error('Error adding bookmark:', error);
               }
             }}>
-              <div className="flex items-center gap-2">
-                <input 
-                  name="url" 
-                  type="text" 
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  placeholder="Paste a URL"
+                  className="w-full px-3 py-2 bg-[#181a1b] border border-gray-700 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
                   value={inputUrl}
                   onChange={(e) => {
                     const val = e.target.value.trim();
@@ -462,18 +540,22 @@ export default function AppPage() {
                       setInputFavicon('');
                     }
                   }}
-                  className="flex h-9 w-full min-w-0 rounded-md border border-gray-700 bg-transparent px-3 py-1 text-xs sm:text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-600 transition-all" 
-                  placeholder="https://example.com" 
                 />
-                <button 
-                  type="submit"
-                  className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-xs font-medium transition-all h-9 px-4 py-1 bg-green-600 text-gray-50 hover:bg-green-700 disabled:pointer-events-none disabled:opacity-50"
-                  disabled={!inputUrl}
-                >
-                  Add
-                </button>
+                {inputFavicon && (
+                  <img src={inputFavicon} alt="Favicon" className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4" />
+                )}
               </div>
-              </form>
+              <button
+                type="submit"
+                className="px-4 py-2 bg-green-600 text-white rounded-md text-sm hover:bg-green-700 transition flex items-center gap-2"
+                data-slot="button"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>
+                </svg>
+                Add
+              </button>
+            </form>
             </div>
             
             <div className="items-center px-4 sm:px-6 flex flex-col gap-2 border-t border-gray-600 pt-4 pb-4">
@@ -493,16 +575,7 @@ export default function AppPage() {
               </div>
             </div>
             
-            {/* Affichage de la barre de progression - temporairement désactivé */}
-            {/* 
-            {processState.step !== 'idle' && (
-              <BookmarkProgressBar
-                currentStep={processState.step}
-                url={processState.url}
-                domain={processState.domain}
-              />
-            )}
-            */}
+            {/* Affichage de la barre de progression - supprimé */}
           </div>
         )}
 
@@ -532,7 +605,7 @@ export default function AppPage() {
                 onClick={() => {
                   // Ne pas ouvrir le popup si le bookmark est en erreur ou en chargement
                   if (bm.status === 'error' || bm.status === 'loading') return;
-                  setDetailPopup({ bookmark: bm, visible: true });
+                  setSelectedBookmark(bm); // Nouveau popup simple
                 }}
                 onDelete={(bookmark) => {
                   // Supprime le bookmark du state
@@ -585,7 +658,7 @@ export default function AppPage() {
                 bookmark={bm}
                 onClick={() => {
                   if (bm.status === 'error' || bm.status === 'loading') return;
-                  setDetailPopup({ bookmark: bm, visible: true });
+                  setSelectedBookmark(bm); // Nouveau popup simple
                 }}
                 onDelete={(bookmark) => {
                   // Supprime le bookmark du state
@@ -628,7 +701,7 @@ export default function AppPage() {
         )}
 
         {/* Menu contextuel pour les bookmarks */}
-        {contextMenu.visible && contextMenu.bookmark && (
+        {contextMenu && contextMenu.visible && contextMenu.bookmark && (
           <BookmarkContextMenu
             x={contextMenu.x}
             y={contextMenu.y}
@@ -663,45 +736,21 @@ export default function AppPage() {
           />
         )}
         
-        {/* Popup détaillé pour les bookmarks */}
-        {detailPopup.visible && detailPopup.bookmark && (
-          <BookmarkDetailPopup
-            bookmark={detailPopup.bookmark}
-            onClose={() => setDetailPopup({ ...detailPopup, visible: false })}
-            onDelete={(bookmark) => {
-              // Supprime effectivement le bookmark du state
-              setBookmarks((prev) => {
-                const newBookmarks = prev.filter((b) => b.id !== bookmark.id);
-                localStorage.setItem('saave_bookmarks', JSON.stringify(newBookmarks));
-                return newBookmarks;
-              });
-              // Ajouter notification de suppression
-              addToast(`Bookmark deleted successfully`, 'success');
-              // Fermer le popup
-              setDetailPopup({ ...detailPopup, visible: false });
-            }}
-            onOpen={() => {
-              window.open(detailPopup.bookmark?.url, '_blank');
-            }}
-          />
-        )}
+
       </div>
       
-      {/* Barre de progression pendant le chargement d'un bookmark */}
-      {processState.step !== 'idle' && (
-        <BookmarkProgressBar
-          currentStep={processState.step}
-          url={processState.url}
-          domain={processState.domain}
-          title={processState.title}
-          favicon={processState.favicon}
-          thumbnail={processState.thumbnail}
-          onCancel={() => setProcessState({ step: 'idle', url: '', domain: '' })}
-        />
-      )}
+      {/* Barre de progression pendant le chargement d'un bookmark - supprimé */}
       
       {/* Gestionnaire de notifications */}
       <ToastManager toasts={toasts} removeToast={removeToast} />
+      
+      {/* Nouveau popup simple pour afficher bookmark avec description, tags et screenshot */}
+      {selectedBookmark && (
+        <BookmarkPopup
+          bookmark={selectedBookmark}
+          onClose={() => setSelectedBookmark(null)}
+        />
+      )}
     </div>
   );
 }
