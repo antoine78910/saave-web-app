@@ -1,23 +1,30 @@
 // Configuration de l'API
 const API_PORTS = [3000, 3001, 3002, 3003, 3004, 3005, 3006, 3007, 3008, 3009, 3010];
 
-// Fonction pour trouver le port actif du serveur Next.js
-async function findActivePort() {
+// Fonction pour trouver le port actif du serveur Saave
+async function findActiveSaavePort() {
+  console.log('🔍 Recherche du serveur Saave sur les ports:', API_PORTS);
+  
   for (const port of API_PORTS) {
     try {
+      console.log(`🔍 Test du port ${port}...`);
       const response = await fetch(`http://localhost:${port}/api/bookmarks`, {
-        method: 'OPTIONS',
-        mode: 'cors'
+        method: 'GET',
+        mode: 'cors',
+        credentials: 'omit'
       });
-      if (response.ok || response.status === 405) {
-        console.log(`Found active server on port ${port}`);
+      
+      if (response.ok || response.status === 400 || response.status === 401) {
+        console.log(`✅ Serveur Saave trouvé sur le port ${port}`);
         return port;
       }
     } catch (error) {
-      // Port non disponible, continuer
+      console.log(`❌ Port ${port} non disponible:`, error.message);
     }
   }
-  throw new Error('No active Saave server found. Please make sure the app is running.');
+  
+  console.error('❌ Aucun serveur Saave trouvé sur les ports:', API_PORTS);
+  throw new Error('Aucun serveur Saave trouvé. Assurez-vous que l\'application Saave est lancée.');
 }
 
 // Fonction pour obtenir l'utilisateur connecté depuis l'app Saave
@@ -108,36 +115,75 @@ async function storeUser(user) {
 // Fonction pour extraire les métadonnées d'une page
 async function extractPageMetadata(tab) {
   try {
+    console.log(`Extracting metadata from tab: ${tab.title} (${tab.url})`);
+    
+    // Vérifier si on peut exécuter du script sur cette page
+    if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('edge://') || tab.url.startsWith('about:')) {
+      console.warn('Cannot extract metadata from browser pages');
+      return {
+        title: tab.title || 'Browser Page',
+        description: '',
+        favicon: '',
+        thumbnail: ''
+      };
+    }
+
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: () => {
-        const getMetaContent = (name) => {
-          const meta = document.querySelector(`meta[name="${name}"], meta[property="${name}"]`);
-          return meta ? meta.content : '';
-        };
-        
-        const getFavicon = () => {
-          const favicon = document.querySelector('link[rel*="icon"]');
-          if (favicon) {
-            return favicon.href;
-          }
-          return `${window.location.protocol}//${window.location.host}/favicon.ico`;
-        };
+        try {
+          const getMetaContent = (name) => {
+            const meta = document.querySelector(`meta[name="${name}"], meta[property="${name}"], meta[property="og:${name}"], meta[name="twitter:${name}"]`);
+            return meta ? meta.content.trim() : '';
+          };
+          
+          const getFavicon = () => {
+            // Essayer différents sélecteurs pour le favicon
+            const selectors = [
+              'link[rel="icon"]',
+              'link[rel="shortcut icon"]', 
+              'link[rel="apple-touch-icon"]',
+              'link[rel="icon"][type="image/png"]',
+              'link[rel="icon"][type="image/x-icon"]'
+            ];
+            
+            for (const selector of selectors) {
+              const favicon = document.querySelector(selector);
+              if (favicon && favicon.href) {
+                return favicon.href;
+              }
+            }
+            
+            // Fallback vers le favicon par défaut
+            return `${window.location.protocol}//${window.location.host}/favicon.ico`;
+          };
 
-        return {
-          title: document.title,
-          description: getMetaContent('description') || getMetaContent('og:description'),
-          favicon: getFavicon(),
-          thumbnail: getMetaContent('og:image')
-        };
+          return {
+            title: document.title || '',
+            description: getMetaContent('description') || getMetaContent('og:description') || getMetaContent('twitter:description') || '',
+            favicon: getFavicon(),
+            thumbnail: getMetaContent('og:image') || getMetaContent('twitter:image') || ''
+          };
+        } catch (scriptError) {
+          console.error('Script execution error:', scriptError);
+          return {
+            title: document.title || '',
+            description: '',
+            favicon: '',
+            thumbnail: ''
+          };
+        }
       }
     });
     
-    return results[0]?.result;
+    const metadata = results[0]?.result;
+    console.log('Extracted metadata:', metadata);
+    return metadata;
+    
   } catch (error) {
     console.warn('Could not extract metadata:', error);
     return {
-      title: tab.title,
+      title: tab.title || 'Unknown Page',
       description: '',
       favicon: '',
       thumbnail: ''
@@ -183,35 +229,30 @@ async function addBookmark(url, title, port, userId, metadata = {}) {
   }
 }
 
-// Fonction pour afficher une notification (avec propriétés complètes)
+// Fonction pour afficher une notification (simple et robuste)
 function showNotification(title, message, type = 'basic') {
   try {
+    // S'assurer que tous les champs requis sont présents
     const notificationOptions = {
-      type: type,
+      type: type || 'basic',
+      iconUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', // 1x1 transparent pixel
       title: title || 'Saave',
-      message: message || 'Notification',
-      iconUrl: chrome.runtime.getURL('icon48.png')
+      message: message || 'Notification'
     };
     
-    console.log('Creating notification with options:', notificationOptions);
+    console.log('📢 Création de la notification:', title, '-', message);
     
-    chrome.notifications.create('saave-notification-' + Date.now(), notificationOptions, function(notificationId) {
+    chrome.notifications.create('saave-' + Date.now(), notificationOptions, function(notificationId) {
       if (chrome.runtime.lastError) {
-        console.error('Notification error:', chrome.runtime.lastError);
-        // Fallback: essayer sans icône
-        chrome.notifications.create('saave-notification-fallback-' + Date.now(), {
-          type: type,
-          title: title || 'Saave',
-          message: message || 'Notification'
-        });
+        console.error('❌ Erreur notification:', chrome.runtime.lastError);
       } else {
-        console.log('Notification created successfully:', notificationId);
+        console.log('✅ Notification créée:', notificationId);
       }
     });
   } catch (error) {
-    console.error('Error showing notification:', error);
-    // Fallback: afficher dans la console
-    console.log(`Notification: ${title} - ${message}`);
+    console.error('❌ Erreur affichage notification:', error);
+    // Fallback: log dans la console
+    console.log(`📢 ${title}: ${message}`);
   }
 }
 
@@ -231,7 +272,7 @@ chrome.action.onClicked.addListener(async (tab) => {
 
     // Trouver le port actif
     console.log('Finding active server port...');
-    const port = await findActivePort();
+    const port = await findActiveSaavePort();
     
     // Obtenir l'utilisateur connecté
     console.log('Getting current user...');

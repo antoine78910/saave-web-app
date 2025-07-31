@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { supabase } from '@/lib/supabase';
 
 interface Bookmark {
   id: string;
@@ -14,9 +15,6 @@ interface Bookmark {
   user_id: string;
 }
 
-// Store en mémoire pour les bookmarks par utilisateur
-const bookmarksStore: Map<string, Bookmark[]> = new Map();
-
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const userId = searchParams.get('user_id');
@@ -30,11 +28,24 @@ export async function GET(request: NextRequest) {
     );
   }
   
-  const userBookmarks = bookmarksStore.get(userId) || [];
-  console.log('GET /api/bookmarks - Returning bookmarks for user:', userId, userBookmarks);
-  
   try {
-    return NextResponse.json(userBookmarks, {
+    const { data: userBookmarks, error } = await supabase
+      .from('bookmarks')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Supabase error:', error);
+      return NextResponse.json(
+        { error: 'Failed to fetch bookmarks' },
+        { status: 500 }
+      );
+    }
+
+    console.log('GET /api/bookmarks - Returning bookmarks for user:', userId, userBookmarks);
+    
+    return NextResponse.json(userBookmarks || [], {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
@@ -70,8 +81,7 @@ export async function POST(request: NextRequest) {
     }
     
     // Créer un nouveau bookmark avec toutes les métadonnées
-    const newBookmark: Bookmark = {
-      id: crypto.randomUUID(),
+    const newBookmark = {
       url: data.url,
       title: data.title,
       description: data.description || '',
@@ -79,19 +89,28 @@ export async function POST(request: NextRequest) {
       thumbnail: data.thumbnail || '',
       tags: Array.isArray(data.tags) ? data.tags : [],
       category_id: data.category_id || null,
-      created_at: new Date().toISOString(),
       source: data.source || 'webapp',
       user_id: data.user_id
     };
     
-    // Ajouter le bookmark au store de l'utilisateur
-    const userBookmarks = bookmarksStore.get(data.user_id) || [];
-    userBookmarks.push(newBookmark);
-    bookmarksStore.set(data.user_id, userBookmarks);
+    // Ajouter le bookmark à Supabase
+    const { data: insertedBookmark, error } = await supabase
+      .from('bookmarks')
+      .insert([newBookmark])
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Supabase error:', error);
+      return NextResponse.json(
+        { error: 'Failed to add bookmark: ' + error.message },
+        { status: 500 }
+      );
+    }
     
-    console.log('Bookmark added for user:', data.user_id, newBookmark);
+    console.log('Bookmark added for user:', data.user_id, insertedBookmark);
     
-    return NextResponse.json(newBookmark, {
+    return NextResponse.json(insertedBookmark, {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
