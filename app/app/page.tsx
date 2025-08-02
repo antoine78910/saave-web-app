@@ -459,7 +459,7 @@ export default function AppPage() {
         // S'assurer que le bookmark reste TOUJOURS visible avec status loading
         setBookmarks(prev => {
           const updatedBookmarks = prev.map(b => 
-            b.id === bookmarkId 
+          b.id === bookmarkId 
               ? { 
                   ...b, 
                   status: 'loading' as const, 
@@ -622,7 +622,7 @@ export default function AppPage() {
       
       // Garder l'indicateur visible plus longtemps pour voir le résultat
       setTimeout(() => {
-        setCurrentProgress({ step: 'idle' as BookmarkProcessStep, url: '', domain: '' });
+      setCurrentProgress({ step: 'idle' as BookmarkProcessStep, url: '', domain: '' });
       }, 3000);
       
       addToast('Bookmark added successfully!', 'success');
@@ -870,13 +870,13 @@ export default function AppPage() {
                     }
                     
                     // Supprimer du state local seulement après succès serveur
-                    setBookmarks((prev) => {
-                      const newBookmarks = prev.filter((b) => b.id !== bookmark.id);
-                      localStorage.setItem('saave_bookmarks', JSON.stringify(newBookmarks));
-                      return newBookmarks;
-                    });
+                  setBookmarks((prev) => {
+                    const newBookmarks = prev.filter((b) => b.id !== bookmark.id);
+                    localStorage.setItem('saave_bookmarks', JSON.stringify(newBookmarks));
+                    return newBookmarks;
+                  });
                     
-                    addToast(`Bookmark deleted successfully`, 'success');
+                  addToast(`Bookmark deleted successfully`, 'success');
                     console.log('✅ Bookmark supprimé avec succès');
                   } catch (error) {
                     console.error('❌ Erreur suppression:', error);
@@ -940,13 +940,13 @@ export default function AppPage() {
                     }
                     
                     // Supprimer du state local seulement après succès serveur
-                    setBookmarks((prev) => {
-                      const newBookmarks = prev.filter((b) => b.id !== bookmark.id);
-                      localStorage.setItem('saave_bookmarks', JSON.stringify(newBookmarks));
-                      return newBookmarks;
-                    });
+                  setBookmarks((prev) => {
+                    const newBookmarks = prev.filter((b) => b.id !== bookmark.id);
+                    localStorage.setItem('saave_bookmarks', JSON.stringify(newBookmarks));
+                    return newBookmarks;
+                  });
                     
-                    addToast(`Bookmark deleted successfully`, 'success');
+                  addToast(`Bookmark deleted successfully`, 'success');
                     console.log('✅ Bookmark supprimé avec succès');
                   } catch (error) {
                     console.error('❌ Erreur suppression:', error);

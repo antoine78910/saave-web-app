@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { User as SupabaseUser } from '@supabase/supabase-js';
 
 export interface User {
   id: string;
@@ -13,51 +15,65 @@ export function useAuth() {
 
   useEffect(() => {
     let mounted = true;
-    console.log('🔧 useAuth: Initialisation du hook');
+    console.log('🔧 useAuth: Initialisation du hook avec Supabase');
 
-    // Mode développement forcé - utilisateur statique
-    console.warn('🔧 Mode développement forcé - utilisateur statique');
-    
-    // Nettoyer complètement localStorage en toute sécurité
-    try {
-      if (typeof window !== 'undefined' && window.localStorage) {
-        console.log('🧹 Nettoyage localStorage...');
-        // Supprimer toutes les clés Supabase
-        const keys = Object.keys(localStorage);
-        keys.forEach(key => {
-          if (key.startsWith('sb-')) {
-            try {
-              localStorage.removeItem(key);
-              console.log('🗑️ Supprimé:', key);
-            } catch (e) {
-              console.warn('Impossible de supprimer:', key);
-            }
-          }
-        });
+    // Vérifier la session existante
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (mounted) {
+        if (session?.user) {
+          const userData: User = {
+            id: session.user.id,
+            email: session.user.email || '',
+            created_at: session.user.created_at || '',
+            display_name: session.user.user_metadata?.full_name || session.user.user_metadata?.name || session.user.email?.split('@')[0] || ''
+          };
+          setUser(userData);
+          console.log('✅ Session existante trouvée:', userData);
+        } else {
+          setUser(null);
+          console.log('❌ Aucune session trouvée');
+        }
+        setLoading(false);
       }
-    } catch (error) {
-      console.warn('⚠️ Problème localStorage:', error);
-    }
-    
-    // Forcer un utilisateur de développement (sans localStorage)
-    if (mounted) {
-      console.log('👤 Création utilisateur de développement...');
-      const devUser = {
-        id: 'dev-user-123',
-        email: 'anto.dlebos@gmail.com',
-        created_at: new Date().toISOString(),
-        display_name: 'Antoine Delebos'
-      };
-      
-      setUser(devUser);
-      setLoading(false);
-      console.log('✅ Utilisateur créé:', devUser);
-    }
-    
-    return () => { mounted = false; };
+    });
+
+    // Écouter les changements d'authentification
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        console.log('🔄 Auth state change:', event, session?.user?.email);
+        
+        if (mounted) {
+          if (session?.user) {
+            const userData: User = {
+              id: session.user.id,
+              email: session.user.email || '',
+              created_at: session.user.created_at || '',
+              display_name: session.user.user_metadata?.full_name || session.user.user_metadata?.name || session.user.email?.split('@')[0] || ''
+            };
+            setUser(userData);
+          } else {
+            setUser(null);
+          }
+          setLoading(false);
+        }
+      }
+    );
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
-  // Écouter les événements de mise à jour du profil
+  // Rediriger vers /auth si pas connecté
+  useEffect(() => {
+    if (!loading && !user && typeof window !== 'undefined') {
+      console.log('🔄 Redirection vers /auth car pas d\'utilisateur connecté');
+      window.location.href = '/auth';
+    }
+  }, [user, loading]);
+
+  // Écouter les événements de mise à jour du profil (optionnel)
   useEffect(() => {
     if (!user) return;
 
@@ -71,57 +87,41 @@ export function useAuth() {
       }
     };
 
-    // Écouter les événements de connexion depuis /auth
-    const handleUserLogin = (event: Event) => {
-      const customEvent = event as CustomEvent;
-      if (customEvent?.detail) {
-        console.log('🔄 Événement de connexion reçu:', customEvent.detail);
-        setUser({
-          id: customEvent.detail.id,
-          email: customEvent.detail.email,
-          created_at: customEvent.detail.created_at,
-          display_name: customEvent.detail.display_name || ''
-        });
-        setLoading(false);
-      }
-    };
-    
     window.addEventListener('userProfileUpdated', handleProfileUpdate);
-    window.addEventListener('userLoggedIn', handleUserLogin);
-
     return () => {
       window.removeEventListener('userProfileUpdated', handleProfileUpdate);
-      window.removeEventListener('userLoggedIn', handleUserLogin);
     };
   }, [user]);
 
   const signOut = async () => {
     console.log('🚪 Déconnexion en cours...');
     
-    // Effacer les données locales
-    setUser(null);
-    
-    if (typeof window !== 'undefined') {
-      // Nettoyer toutes les données liées à l'authentification
-      try {
-        localStorage.removeItem('saave_user_profile');
-        
-        // Nettoyer les sessions Supabase
-        const keys = Object.keys(localStorage);
-        keys.forEach(key => {
-          if (key.startsWith('sb-')) {
-            console.log('🧹 Suppression:', key);
-            localStorage.removeItem(key);
-          }
-        });
-      } catch (error) {
-        console.warn('⚠️ Erreur nettoyage localStorage:', error);
+    try {
+      // Déconnexion Supabase
+      await supabase.auth.signOut();
+      
+      // Nettoyage localStorage
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.removeItem('saave_user_profile');
+          const keys = Object.keys(localStorage);
+          keys.forEach(key => {
+            if (key.startsWith('sb-')) {
+              localStorage.removeItem(key);
+            }
+          });
+        } catch (error) {
+          console.warn('⚠️ Erreur nettoyage localStorage:', error);
+        }
       }
+      
+      // La redirection sera gérée automatiquement par onAuthStateChange
+      console.log('✅ Déconnexion réussie');
+    } catch (error) {
+      console.error('❌ Erreur lors de la déconnexion:', error);
+      // En cas d'erreur, forcer la redirection quand même
+      window.location.href = '/auth';
     }
-    
-    console.log('✅ Déconnexion terminée, redirection vers /auth');
-    // Rediriger vers la page d'authentification
-    window.location.href = '/auth';
   };
 
   return { user, loading, signOut };
