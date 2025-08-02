@@ -69,16 +69,26 @@ export function useAuth() {
     // Écouter les changements d'authentification
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
-        console.log('🔄 Auth state change:', event, session?.user?.email);
+        console.log('🔄 useAuth: Auth state change!', {
+          event,
+          hasSession: !!session,
+          hasUser: !!session?.user,
+          userEmail: session?.user?.email,
+          mounted
+        });
         
         if (mounted) {
           if (session?.user) {
             const userData = processUserData(session.user);
+            console.log('✅ useAuth: Utilisateur connecté, mise à jour du state:', userData);
             setUser(userData);
           } else {
+            console.log('❌ useAuth: Pas d\'utilisateur, reset du state');
             setUser(null);
           }
           setLoading(false);
+        } else {
+          console.log('⚠️ useAuth: Component démonté, ignore le changement d\'état');
         }
       }
     );
@@ -91,8 +101,16 @@ export function useAuth() {
 
   // Rediriger vers /auth si pas connecté
   useEffect(() => {
+    console.log('🔍 useAuth: Vérification redirection:', {
+      loading,
+      hasUser: !!user,
+      userEmail: user?.email,
+      currentPath: typeof window !== 'undefined' ? window.location.pathname : 'server',
+      shouldRedirect: !loading && !user && typeof window !== 'undefined'
+    });
+    
     if (!loading && !user && typeof window !== 'undefined') {
-      console.log('🔄 Redirection vers /auth car pas d\'utilisateur connecté');
+      console.log('🔄 useAuth: Redirection vers /auth car pas d\'utilisateur connecté');
       window.location.href = '/auth';
     }
   }, [user, loading]);

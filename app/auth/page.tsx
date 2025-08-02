@@ -63,23 +63,53 @@ export default function AuthPage() {
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('🚀 AUTH: Début de l\'authentification', { isSignIn, email: email.substring(0, 5) + '...' });
+    
     setIsLoading(true);
     setAuthError(null);
 
     try {
       if (isSignIn) {
-        const { error } = await supabase.auth.signInWithPassword({
+        console.log('🔑 AUTH: Tentative de connexion par email/password...');
+        
+        const { data, error } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
 
-        if (error) throw error;
+        console.log('📡 AUTH: Réponse de signInWithPassword:', {
+          hasUser: !!data.user,
+          hasSession: !!data.session,
+          userEmail: data.user?.email,
+          error: error
+        });
 
-        showToast('Welcome back! Redirecting...', 'success');
-        // La redirection sera gérée automatiquement par le middleware et useAuth
-        router.push('/app');
+        if (error) {
+          console.error('❌ AUTH: Erreur de connexion:', error);
+          throw error;
+        }
+
+        if (data.session) {
+          console.log('✅ AUTH: Session créée avec succès!', {
+            userId: data.user?.id,
+            email: data.user?.email,
+            sessionId: data.session.access_token.substring(0, 20) + '...'
+          });
+          
+          showToast('Welcome back! Redirecting...', 'success');
+          
+          // Attendre un peu pour que la session soit bien établie
+          setTimeout(() => {
+            console.log('🔄 AUTH: Redirection vers /app...');
+            router.push('/app');
+          }, 1000);
+        } else {
+          console.warn('⚠️ AUTH: Pas de session créée malgré l\'absence d\'erreur');
+        }
       } else {
-        const { error } = await supabase.auth.signUp({
+        console.log('📝 AUTH: Tentative d\'inscription...');
+        
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
@@ -87,11 +117,22 @@ export default function AuthPage() {
           },
         });
 
-        if (error) throw error;
+        console.log('📡 AUTH: Réponse de signUp:', {
+          hasUser: !!data.user,
+          hasSession: !!data.session,
+          needsConfirmation: !data.session && data.user && !data.user.email_confirmed_at,
+          error: error
+        });
+
+        if (error) {
+          console.error('❌ AUTH: Erreur d\'inscription:', error);
+          throw error;
+        }
 
         showToast('Account created successfully! Please check your email to verify your account.', 'success');
       }
     } catch (error) {
+      console.error('❌ AUTH: Erreur complète:', error);
       const err = error as AuthError;
       setAuthError(err.message || "Une erreur s'est produite");
       showToast(err.message || "An error occurred", 'error');
