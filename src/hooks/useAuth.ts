@@ -14,28 +14,57 @@ export function useAuth() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Ne rien faire côté serveur
+    if (typeof window === 'undefined') {
+      return;
+    }
+
     let mounted = true;
     console.log('🔧 useAuth: Initialisation du hook avec Supabase');
 
-    // Vérifier la session existante
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (mounted) {
-        if (session?.user) {
-          const userData: User = {
-            id: session.user.id,
-            email: session.user.email || '',
-            created_at: session.user.created_at || '',
-            display_name: session.user.user_metadata?.full_name || session.user.user_metadata?.name || session.user.email?.split('@')[0] || ''
-          };
-          setUser(userData);
-          console.log('✅ Session existante trouvée:', userData);
-        } else {
-          setUser(null);
-          console.log('❌ Aucune session trouvée');
-        }
-        setLoading(false);
-      }
+    // Fonction pour traiter les données utilisateur
+    const processUserData = (supabaseUser: any): User => ({
+      id: supabaseUser.id,
+      email: supabaseUser.email || '',
+      created_at: supabaseUser.created_at || '',
+      display_name: supabaseUser.user_metadata?.full_name || 
+                   supabaseUser.user_metadata?.name || 
+                   supabaseUser.email?.split('@')[0] || ''
     });
+
+    // Vérifier la session existante
+    const checkSession = async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error('Erreur lors de la récupération de la session:', error);
+          setUser(null);
+          setLoading(false);
+          return;
+        }
+
+        if (mounted) {
+          if (session?.user) {
+            const userData = processUserData(session.user);
+            setUser(userData);
+            console.log('✅ Session existante trouvée:', userData);
+          } else {
+            setUser(null);
+            console.log('❌ Aucune session trouvée');
+          }
+          setLoading(false);
+        }
+      } catch (error) {
+        console.error('Erreur dans checkSession:', error);
+        if (mounted) {
+          setUser(null);
+          setLoading(false);
+        }
+      }
+    };
+
+    checkSession();
 
     // Écouter les changements d'authentification
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -44,12 +73,7 @@ export function useAuth() {
         
         if (mounted) {
           if (session?.user) {
-            const userData: User = {
-              id: session.user.id,
-              email: session.user.email || '',
-              created_at: session.user.created_at || '',
-              display_name: session.user.user_metadata?.full_name || session.user.user_metadata?.name || session.user.email?.split('@')[0] || ''
-            };
+            const userData = processUserData(session.user);
             setUser(userData);
           } else {
             setUser(null);
