@@ -4,28 +4,42 @@ import type { NextRequest } from 'next/server'
 
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next()
-  const supabase = createMiddlewareClient({ req, res })
   
-  const {
-    data: { session },
-  } = await supabase.auth.getSession()
+  // Temporairement désactivé le middleware pour debug
+  // TODO: Réactiver après avoir configuré les variables d'environnement sur Vercel
+  console.log('Middleware hit for:', req.nextUrl.pathname)
+  
+  try {
+    const supabase = createMiddlewareClient({ req, res })
+    
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
 
-  // Pages qui nécessitent une authentification
-  const protectedPaths = ['/app', '/account', '/billing']
-  const isProtectedPath = protectedPaths.some(path => req.nextUrl.pathname.startsWith(path))
+    console.log('Session in middleware:', !!session)
 
-  // Pages d'authentification
-  const authPaths = ['/auth', '/auth/callback']
-  const isAuthPath = authPaths.some(path => req.nextUrl.pathname.startsWith(path))
+    // Pages qui nécessitent une authentification
+    const protectedPaths = ['/app', '/account', '/billing']
+    const isProtectedPath = protectedPaths.some(path => req.nextUrl.pathname.startsWith(path))
 
-  // Si l'utilisateur n'est pas connecté et essaie d'accéder à une page protégée
-  if (!session && isProtectedPath) {
-    return NextResponse.redirect(new URL('/auth', req.url))
-  }
+    // Pages d'authentification
+    const authPaths = ['/auth', '/auth/callback']
+    const isAuthPath = authPaths.some(path => req.nextUrl.pathname.startsWith(path))
 
-  // Si l'utilisateur est connecté et essaie d'accéder à la page d'auth
-  if (session && isAuthPath && req.nextUrl.pathname !== '/auth/callback') {
-    return NextResponse.redirect(new URL('/app', req.url))
+    // Si l'utilisateur n'est pas connecté et essaie d'accéder à une page protégée
+    if (!session && isProtectedPath) {
+      console.log('Redirecting to /auth - no session for protected path')
+      return NextResponse.redirect(new URL('/auth', req.url))
+    }
+
+    // Si l'utilisateur est connecté et essaie d'accéder à la page d'auth
+    if (session && isAuthPath && req.nextUrl.pathname !== '/auth/callback') {
+      console.log('Redirecting to /app - user already logged in')
+      return NextResponse.redirect(new URL('/app', req.url))
+    }
+  } catch (error) {
+    console.error('Middleware error:', error)
+    // En cas d'erreur dans le middleware, laisser passer la requête
   }
 
   return res

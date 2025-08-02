@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { useState, useEffect } from 'react';
+import { supabase } from '../../lib/supabase';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import Toast from '../../components/Toast';
@@ -26,6 +26,17 @@ export default function AuthPage() {
   const [toasts, setToasts] = useState<ToastType[]>([]);
   const router = useRouter();
 
+  // Rediriger vers /app si déjà connecté
+  useEffect(() => {
+    const checkUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        router.push('/app');
+      }
+    };
+    checkUser();
+  }, [router]);
+
   const showToast = (message: string, type: 'success' | 'error' | 'info') => {
     const id = Date.now().toString();
     setToasts(prev => [...prev, { id, message, type }]);
@@ -37,57 +48,8 @@ export default function AuthPage() {
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Mode développement : simuler une connexion réussie
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-      setIsLoading(true);
-      showToast('Connexion simulée (mode développement)...', 'success');
-      
-      // Sauvegarder les informations utilisateur en localStorage
-      const userProfile = {
-        id: 'dev-user-123',
-        email: email || 'anto.dlebos@gmail.com',
-        display_name: 'Antoine Delebos',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-      localStorage.setItem('saave_user_profile', JSON.stringify(userProfile));
-      console.log('💾 Profil utilisateur sauvegardé:', userProfile);
-      
-      // Déclencher un événement pour notifier useAuth de la mise à jour
-      window.dispatchEvent(new CustomEvent('userLoggedIn', {
-        detail: userProfile
-      }));
-      
-      setTimeout(() => {
-        // Vérifier s'il y a une redirection stockée
-        const redirectAfterAuth = sessionStorage.getItem('redirectAfterAuth');
-        const pendingBookmarkUrl = sessionStorage.getItem('pendingBookmarkUrl');
-        
-        if (redirectAfterAuth) {
-          console.log('🔄 Redirection vers:', redirectAfterAuth);
-          sessionStorage.removeItem('redirectAfterAuth');
-          window.location.href =(redirectAfterAuth);
-        } else if (pendingBookmarkUrl) {
-          console.log('🔗 Redirection vers /app avec lien pending:', pendingBookmarkUrl);
-          window.location.href =('/app');
-        } else {
-          console.log('🔄 Redirection par défaut vers /app');
-          window.location.href =('/app');
-        }
-        setIsLoading(false);
-      }, 1000);
-      return;
-    }
-
     setIsLoading(true);
     setAuthError(null);
-
-    // Initialiser le client Supabase uniquement au moment de l'authentification
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-    );
 
     try {
       if (isSignIn) {
@@ -99,24 +61,8 @@ export default function AuthPage() {
         if (error) throw error;
 
         showToast('Welcome back! Redirecting...', 'success');
-        setTimeout(() => {
-          // Vérifier s'il y a une redirection stockée
-          const redirectAfterAuth = sessionStorage.getItem('redirectAfterAuth');
-          const pendingBookmarkUrl = sessionStorage.getItem('pendingBookmarkUrl');
-          
-          if (redirectAfterAuth) {
-            console.log('🔄 Redirection vers:', redirectAfterAuth);
-            sessionStorage.removeItem('redirectAfterAuth');
-            window.location.href =(redirectAfterAuth);
-          } else if (pendingBookmarkUrl) {
-            console.log('🔗 Redirection vers /app avec lien pending:', pendingBookmarkUrl);
-            window.location.href =('/app');
-          } else {
-            console.log('🔄 Redirection par défaut vers /app');
-            window.location.href =('/app');
-          }
-          router.refresh();
-        }, 1000);
+        // La redirection sera gérée automatiquement par le middleware et useAuth
+        router.push('/app');
       } else {
         const { error } = await supabase.auth.signUp({
           email,
@@ -140,56 +86,8 @@ export default function AuthPage() {
   };
 
   const handleGoogleSignIn = async () => {
-    // Mode développement : simuler une connexion Google
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-      setIsLoading(true);
-      showToast('Connexion Google simulée (mode développement)...', 'success');
-      
-      // Sauvegarder les informations utilisateur en localStorage
-      const userProfile = {
-        id: 'dev-user-123',
-        email: 'anto.dlebos@gmail.com',
-        display_name: 'Antoine Delebos',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-      localStorage.setItem('saave_user_profile', JSON.stringify(userProfile));
-      console.log('💾 Profil utilisateur Google sauvegardé:', userProfile);
-      
-      // Déclencher un événement pour notifier useAuth de la mise à jour
-      window.dispatchEvent(new CustomEvent('userLoggedIn', {
-        detail: userProfile
-      }));
-      
-      setTimeout(() => {
-        // Vérifier s'il y a une redirection stockée
-        const redirectAfterAuth = sessionStorage.getItem('redirectAfterAuth');
-        const pendingBookmarkUrl = sessionStorage.getItem('pendingBookmarkUrl');
-        
-        if (redirectAfterAuth) {
-          console.log('🔄 Redirection vers:', redirectAfterAuth);
-          sessionStorage.removeItem('redirectAfterAuth');
-          window.location.href =(redirectAfterAuth);
-        } else if (pendingBookmarkUrl) {
-          console.log('🔗 Redirection vers /app avec lien pending:', pendingBookmarkUrl);
-          window.location.href =('/app');
-        } else {
-          console.log('🔄 Redirection par défaut vers /app');
-          window.location.href =('/app');
-        }
-        setIsLoading(false);
-      }, 1000);
-      return;
-    }
-
     setIsLoading(true);
     setAuthError(null);
-
-    // Initialiser le client Supabase uniquement au moment de l'authentification
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-    );
 
     try {
       const { error } = await supabase.auth.signInWithOAuth({
