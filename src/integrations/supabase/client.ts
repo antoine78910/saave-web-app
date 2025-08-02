@@ -7,6 +7,13 @@ import type { Database } from './types';
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://bfnkusldtzdpoezqawuu.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJmbmt1c2xkdHpkcG9lenFhd3V1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIxNjI4ODgsImV4cCI6MjA2NzczODg4OH0.D9yJ6KnuiqryKh6dIE3eVN5F1v72ehFEumhCV8eRQAg";
 
+console.log('🔧 SUPABASE CLIENT: Configuration:', {
+  url: SUPABASE_URL,
+  hasKey: !!SUPABASE_PUBLISHABLE_KEY,
+  keyLength: SUPABASE_PUBLISHABLE_KEY?.length,
+  isClient: typeof window !== 'undefined'
+});
+
 // Import the supabase client like this:
 // import { supabase } from "../src/integrations/supabase/client";
 

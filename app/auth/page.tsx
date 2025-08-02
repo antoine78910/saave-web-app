@@ -29,9 +29,24 @@ export default function AuthPage() {
   // Rediriger vers /app si déjà connecté
   useEffect(() => {
     const checkUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        router.push('/app');
+      console.log('🔍 AUTH PAGE: Vérification de la session existante...');
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        console.log('🔍 AUTH PAGE: Session result:', { session: !!session, user: !!session?.user, error });
+        
+        if (error) {
+          console.error('❌ AUTH PAGE: Erreur lors de la vérification de session:', error);
+          return;
+        }
+        
+        if (session?.user) {
+          console.log('✅ AUTH PAGE: Utilisateur déjà connecté, redirection vers /app');
+          router.push('/app');
+        } else {
+          console.log('❌ AUTH PAGE: Aucune session existante');
+        }
+      } catch (error) {
+        console.error('❌ AUTH PAGE: Erreur dans checkUser:', error);
       }
     };
     checkUser();
@@ -86,19 +101,36 @@ export default function AuthPage() {
   };
 
   const handleGoogleSignIn = async () => {
+    console.log('🚀 AUTH PAGE: Tentative de connexion Google...');
     setIsLoading(true);
     setAuthError(null);
 
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
+      const redirectUrl = `${window.location.origin}/auth/callback`;
+      console.log('🔗 AUTH PAGE: URL de redirection:', redirectUrl);
+      
+      console.log('🔧 AUTH PAGE: Configuration Supabase:', {
+        hasSupabase: !!supabase,
+        origin: window.location.origin
+      });
+
+      const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: redirectUrl,
         },
       });
 
-      if (error) throw error;
+      console.log('📡 AUTH PAGE: Réponse OAuth:', { data, error });
+
+      if (error) {
+        console.error('❌ AUTH PAGE: Erreur OAuth:', error);
+        throw error;
+      }
+      
+      console.log('✅ AUTH PAGE: OAuth initié avec succès, redirection en cours...');
     } catch (error) {
+      console.error('❌ AUTH PAGE: Erreur complète:', error);
       const err = error as AuthError;
       setAuthError(err.message || "Une erreur s'est produite");
       showToast(err.message || "An error occurred", 'error');
