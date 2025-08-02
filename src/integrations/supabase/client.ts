@@ -18,11 +18,35 @@ console.log('🔧 SUPABASE CLIENT: Configuration:', {
 // import { supabase } from "../src/integrations/supabase/client";
 
 // Create a single supabase client for the entire app
-export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
-  auth: {
-    storage: typeof window !== 'undefined' ? localStorage : undefined,
-    persistSession: typeof window !== 'undefined',
-    autoRefreshToken: typeof window !== 'undefined',
-    detectSessionInUrl: typeof window !== 'undefined',
+let supabaseInstance: ReturnType<typeof createClient<Database>> | null = null;
+
+export const supabase = (() => {
+  if (supabaseInstance) return supabaseInstance;
+  
+  try {
+    supabaseInstance = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+      auth: {
+        storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+        persistSession: typeof window !== 'undefined',
+        autoRefreshToken: typeof window !== 'undefined',
+        detectSessionInUrl: typeof window !== 'undefined',
+        flowType: 'pkce'
+      }
+    });
+    
+    console.log('✅ SUPABASE CLIENT: Instance créée avec succès');
+    return supabaseInstance;
+  } catch (error) {
+    console.error('❌ SUPABASE CLIENT: Erreur lors de la création:', error);
+    // Fallback: créer un client minimal
+    supabaseInstance = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+      auth: {
+        storage: undefined,
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+      }
+    });
+    return supabaseInstance;
   }
-});
+})();

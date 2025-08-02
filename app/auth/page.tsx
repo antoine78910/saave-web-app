@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase';
+import { createBrowserClient } from '../../lib/supabase-client';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import Toast from '../../components/Toast';
@@ -31,6 +31,7 @@ export default function AuthPage() {
     const checkUser = async () => {
       console.log('🔍 AUTH PAGE: Vérification de la session existante...');
       try {
+        const supabase = createBrowserClient();
         const { data: { session }, error } = await supabase.auth.getSession();
         console.log('🔍 AUTH PAGE: Session result:', { session: !!session, user: !!session?.user, error });
         
@@ -69,6 +70,8 @@ export default function AuthPage() {
     setAuthError(null);
 
     try {
+      const supabase = createBrowserClient();
+      
       if (isSignIn) {
         console.log('🔑 AUTH: Tentative de connexion par email/password...');
         
@@ -147,6 +150,7 @@ export default function AuthPage() {
     setAuthError(null);
 
     try {
+      const supabase = createBrowserClient();
       const redirectUrl = `${window.location.origin}/auth/callback`;
       console.log('🔗 AUTH PAGE: URL de redirection:', redirectUrl);
       
