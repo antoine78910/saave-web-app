@@ -18,9 +18,20 @@ export default function AppPage() {
   const { user, loading: authLoading, signOut } = useAuth();
   const router = useRouter();
   
+  // Debug utilisateur
+  React.useEffect(() => {
+    console.log('🔍 État utilisateur dans AppPage:', { user, authLoading });
+    if (user) {
+      console.log('✅ Utilisateur connecté:', user.email, user.display_name);
+    } else {
+      console.log('❌ Aucun utilisateur connecté');
+    }
+  }, [user, authLoading]);
+  
   // Rediriger vers auth si pas connecté
   React.useEffect(() => {
     if (!authLoading && !user) {
+      console.log('🔄 Redirection vers /auth car pas d\'utilisateur');
       router.push('/auth');
     }
   }, [authLoading, user, router]);
@@ -56,7 +67,34 @@ export default function AppPage() {
         const response = await fetch(`/api/bookmarks?user_id=${user.id}`);
         if (response.ok) {
           const userBookmarks = await response.json();
-          setBookmarks(userBookmarks);
+          
+          // PROTECTION: Préserver les bookmarks en cours de traitement ET récemment terminés
+          setBookmarks(prevBookmarks => {
+            // Garder les bookmarks en cours de traitement
+            const loadingBookmarks = prevBookmarks.filter(bm => bm.status === 'loading');
+            
+            // Garder aussi les bookmarks récemment terminés (protection timing)
+            const recentlyCompletedBookmarks = prevBookmarks.filter(bm => 
+              bm.status === 'complete' && 
+              bm.createdAt && 
+              (Date.now() - new Date(bm.createdAt).getTime()) < 30000 // Moins de 30 secondes
+            );
+            
+            // IDs des bookmarks à préserver localement
+            const preservedIds = new Set([
+              ...loadingBookmarks.map(bm => bm.id),
+              ...recentlyCompletedBookmarks.map(bm => bm.id)
+            ]);
+            
+            // Prendre TOUS les bookmarks de l'API qui ne sont pas préservés localement
+            const apiBookmarks = userBookmarks.filter((bm: Bookmark) => !preservedIds.has(bm.id));
+            
+            // Merger : bookmarks préservés EN PREMIER + bookmarks de l'API
+            const mergedBookmarks = [...loadingBookmarks, ...recentlyCompletedBookmarks, ...apiBookmarks];
+            
+            console.log(`🔄 Bookmarks: ${loadingBookmarks.length} en cours, ${recentlyCompletedBookmarks.length} récents, ${apiBookmarks.length} de l'API`);
+            return mergedBookmarks;
+          });
         }
       } catch (error) {
         console.error('Error loading user bookmarks:', error);
@@ -68,12 +106,160 @@ export default function AppPage() {
     loadUserBookmarks();
   }, [loadUserBookmarks]);
 
-  // Recharger les bookmarks toutes les 5 secondes pour détecter les ajouts de l'extension
+  // Gérer les liens en attente depuis la landing page
+  React.useEffect(() => {
+    const handlePendingBookmark = () => {
+      const pendingUrl = sessionStorage.getItem('pendingBookmarkUrl');
+      if (pendingUrl && user) {
+        console.log('🔗 Lien en attente détecté:', pendingUrl);
+        setInputUrl(pendingUrl);
+        sessionStorage.removeItem('pendingBookmarkUrl');
+        
+        // Déclencher automatiquement l'ajout du bookmark
+        setTimeout(() => {
+          const addButton = document.querySelector('form button[data-slot="button"]');
+          if (addButton instanceof HTMLElement) {
+            console.log('🚀 Ajout automatique du bookmark');
+            addButton.click();
+          }
+        }, 500);
+      }
+    };
+
+    if (user) {
+      handlePendingBookmark();
+    }
+  }, [user]);
+
+  // Gérer les demandes de l'extension Chrome
+  React.useEffect(() => {
+    // Écouter les événements de l'extension
+    const handleExtensionBookmarkRequest = (event: CustomEvent) => {
+      console.log('🎯 WEBAPP: Événement extensionBookmarkRequest reçu:', event);
+      console.log('🎯 WEBAPP: event.detail:', event.detail);
+      console.log('🎯 WEBAPP: user état:', user);
+      console.log('🎯 WEBAPP: subscriptionLoading:', subscriptionLoading);
+      
+      if (user && event.detail?.url) {
+        console.log('🔗 WEBAPP: Demande de bookmark depuis l\'extension:', event.detail.url);
+        setInputUrl(event.detail.url);
+        
+        // Auto-submit après un petit délai ET quand la subscription est chargée
+        const tryAutoSubmit = () => {
+          console.log('🔄 WEBAPP: tryAutoSubmit - subscriptionLoading:', subscriptionLoading);
+          if (subscriptionLoading) {
+            console.log('⏳ WEBAPP: Attente du chargement de la subscription pour auto-submit...');
+            setTimeout(tryAutoSubmit, 200);
+            return;
+          }
+          
+          console.log('✅ WEBAPP: Subscription chargée, déclenchement auto-submit dans 500ms...');
+          setTimeout(() => {
+            const addButton = document.querySelector('form button[data-slot="button"]');
+            console.log('🔍 WEBAPP: Bouton trouvé:', addButton);
+            if (addButton instanceof HTMLElement) {
+              console.log('🚀 WEBAPP: Ajout automatique du bookmark depuis extension');
+              addButton.click();
+            } else {
+              console.error('❌ WEBAPP: Bouton d\'ajout non trouvé!');
+            }
+          }, 500);
+        };
+        
+        tryAutoSubmit();
+      } else {
+        console.log('❌ WEBAPP: Conditions non remplies - user:', !!user, 'url:', event.detail?.url);
+      }
+    };
+
+    // Vérifier sessionStorage pour les demandes de l'extension
+    const handleExtensionStorageRequest = () => {
+      const extensionUrl = sessionStorage.getItem('extensionBookmarkUrl');
+      if (extensionUrl && user) {
+        console.log('🔗 URL depuis extension (sessionStorage):', extensionUrl);
+        setInputUrl(extensionUrl);
+        sessionStorage.removeItem('extensionBookmarkUrl');
+        
+        // Auto-submit après un petit délai ET quand la subscription est chargée
+        const tryAutoSubmit = () => {
+          if (subscriptionLoading) {
+            console.log('⏳ Attente du chargement de la subscription pour auto-submit...');
+            setTimeout(tryAutoSubmit, 200);
+            return;
+          }
+          
+          setTimeout(() => {
+            const addButton = document.querySelector('form button[data-slot="button"]');
+            if (addButton instanceof HTMLElement) {
+              console.log('🚀 Ajout automatique du bookmark depuis extension');
+              addButton.click();
+            }
+          }, 500);
+        };
+        
+        tryAutoSubmit();
+      }
+    };
+
+    // Vérifier les paramètres URL pour les demandes de l'extension
+    const handleExtensionUrlParams = () => {
+      if (typeof window !== 'undefined' && user) {
+        const urlParams = new URLSearchParams(window.location.search);
+        const extensionUrl = urlParams.get('extensionUrl');
+        
+        if (extensionUrl) {
+          console.log('🔗 URL depuis extension (URL params):', extensionUrl);
+          setInputUrl(extensionUrl);
+          
+          // Nettoyer l'URL
+          const newUrl = window.location.pathname;
+          window.history.replaceState({}, '', newUrl);
+          
+          // Auto-submit après un petit délai ET quand la subscription est chargée
+          const tryAutoSubmit = () => {
+            if (subscriptionLoading) {
+              console.log('⏳ Attente du chargement de la subscription pour auto-submit...');
+              setTimeout(tryAutoSubmit, 200);
+              return;
+            }
+            
+            setTimeout(() => {
+              const addButton = document.querySelector('form button[data-slot="button"]');
+              if (addButton instanceof HTMLElement) {
+                console.log('🚀 Ajout automatique du bookmark depuis extension');
+                addButton.click();
+              }
+            }, 500);
+          };
+          
+          tryAutoSubmit();
+        }
+      }
+    };
+
+    if (user) {
+      // Écouter l'événement personnalisé
+      window.addEventListener('extensionBookmarkRequest', handleExtensionBookmarkRequest as EventListener);
+      
+      // Vérifier sessionStorage
+      handleExtensionStorageRequest();
+      
+      // Vérifier les paramètres URL
+      handleExtensionUrlParams();
+    }
+
+    return () => {
+      window.removeEventListener('extensionBookmarkRequest', handleExtensionBookmarkRequest as EventListener);
+    };
+  }, [user]);
+
+  // Polling pour détecter les bookmarks ajoutés via l'extension Chrome
+  // IMPORTANT: loadUserBookmarks() préserve maintenant les bookmarks en cours de traitement
   React.useEffect(() => {
     if (user?.id) {
       const interval = setInterval(() => {
-        loadUserBookmarks();
-      }, 5000); // Recharger toutes les 5 secondes
+        loadUserBookmarks(); // Merger intelligemment sans écraser les bookmarks 'loading'
+      }, 5000); // Sync toutes les 5 secondes avec l'extension
 
       return () => clearInterval(interval);
     }
@@ -208,8 +394,24 @@ export default function AppPage() {
 
   // Dans la fonction handleAddBookmark
   const handleAddBookmark = async (url: string) => {
+    console.log('🚀 WEBAPP: handleAddBookmark appelé avec URL:', url);
+    console.log('🚀 WEBAPP: subscriptionLoading:', subscriptionLoading);
+    console.log('🚀 WEBAPP: subscription:', subscription);
+    console.log('🚀 WEBAPP: bookmarks.length:', bookmarks.length);
+    
+    // Attendre que la subscription soit chargée avant de vérifier
+    if (subscriptionLoading) {
+      console.log('⏳ WEBAPP: Attente du chargement de la subscription...');
+      return;
+    }
+    
+    console.log('🔍 WEBAPP: Vérification canAddBookmark...');
+    const canAdd = canAddBookmark(bookmarks.length);
+    console.log('🔍 WEBAPP: canAddBookmark result:', canAdd);
+    
     // Vérifier si l'utilisateur peut ajouter un bookmark
-    if (!canAddBookmark(bookmarks.length)) {
+    if (!canAdd) {
+      console.log('❌ WEBAPP: Limite atteinte, redirection vers upgrade');
       addToast(
         `You've reached your limit of ${subscription?.bookmarkLimit} bookmarks. Upgrade to Pro for unlimited bookmarks!`, 
         'error', 
@@ -218,6 +420,8 @@ export default function AppPage() {
       router.push('/upgrade');
       return;
     }
+    
+    console.log('✅ WEBAPP: Vérification passée, poursuite du processus...');
 
     if (!user?.id) {
       addToast('You must be logged in to add bookmarks', 'error');
@@ -246,14 +450,28 @@ export default function AppPage() {
       };
       
       setBookmarks(prev => [newBookmark, ...prev]);
+      console.log('📝 Bookmark initial créé avec status loading:', newBookmark);
       
       // Fonction utilitaire pour mettre à jour l'étape de traitement
       const updateBookmarkStep = (step: BookmarkProcessStep, updates: Partial<Bookmark> = {}) => {
-        setBookmarks(prev => prev.map(b => 
-          b.id === bookmarkId 
-            ? { ...b, processingStep: step, ...updates }
-            : b
-        ));
+        console.log(`🔄 Mise à jour étape: ${step}`, updates);
+        
+        // S'assurer que le bookmark reste TOUJOURS visible avec status loading
+        setBookmarks(prev => {
+          const updatedBookmarks = prev.map(b => 
+            b.id === bookmarkId 
+              ? { 
+                  ...b, 
+                  status: 'loading' as const, 
+                  processingStep: step, 
+                  ...updates 
+                }
+              : b
+          );
+          console.log(`📍 Bookmark ${bookmarkId} mis à jour:`, updatedBookmarks.find(b => b.id === bookmarkId));
+          return updatedBookmarks;
+        });
+        
         setCurrentProgress(prev => ({ ...prev, step }));
       };
 
@@ -265,9 +483,15 @@ export default function AppPage() {
         domain: domain.replace('www.', '')
       });
       
+      // Immédiatement commencer avec l'étape scraping visible
+      updateBookmarkStep('scraping');
+      console.log('🟢 DÉMARRAGE du processus visible');
+      
       // Scraping du contenu
       try {
-        updateBookmarkStep('scraping');
+        console.log('🔍 Étape 1/4: Scraping en cours...');
+        await new Promise(resolve => setTimeout(resolve, 500)); // Délai réduit pour voir l'étape plus tôt
+        
         const response = await fetch('/api/scrape', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -278,6 +502,7 @@ export default function AppPage() {
           const data = await response.json();
           content = data.content;
         }
+        console.log('✅ Scraping terminé');
       } catch (error) {
         console.error('Error during scraping:', error);
       }
@@ -285,6 +510,9 @@ export default function AppPage() {
       // Extraction des métadonnées
       try {
         updateBookmarkStep('metadata');
+        console.log('📊 Étape 2/4: Extraction des métadonnées...');
+        await new Promise(resolve => setTimeout(resolve, 500)); // Délai réduit
+        
         const metadataResponse = await fetch('/api/extract-metadata', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -298,12 +526,13 @@ export default function AppPage() {
           favicon = data.favicon || '';
           tags = Array.isArray(data.tags) ? data.tags : [];
           console.log('Metadata extracted:', { title, description, favicon, tags });
-          updateBookmarkStep('metadata', { title, description, favicon, tags });
+          updateBookmarkStep('metadata', { title, description, favicon, tags, status: 'loading' });
         } else {
           console.warn('Metadata extraction failed, using fallback');
           title = domain.replace('www.', '');
           description = 'No description available';
         }
+        console.log('✅ Métadonnées extraites');
       } catch (error) {
         console.error('Error during metadata extraction:', error);
         title = domain.replace('www.', '');
@@ -313,6 +542,9 @@ export default function AppPage() {
       // Capture d'écran
       try {
         updateBookmarkStep('screenshot');
+        console.log('📸 Étape 3/4: Capture d\'écran avec Puppeteer...');
+        await new Promise(resolve => setTimeout(resolve, 500)); // Délai avant screenshot
+        
         const screenshotResponse = await fetch('/api/screenshot', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -322,7 +554,8 @@ export default function AppPage() {
         if (screenshotResponse.ok) {
           const data = await screenshotResponse.json();
           thumbnail = data.url;
-          updateBookmarkStep('screenshot', { thumbnail });
+          updateBookmarkStep('screenshot', { thumbnail, status: 'loading' });
+          console.log('✅ Screenshot créé:', thumbnail);
         }
       } catch (error) {
         console.error('Error during screenshot:', error);
@@ -330,6 +563,8 @@ export default function AppPage() {
       
       // Sauvegarde via API
       updateBookmarkStep('saving');
+      console.log('💾 Étape 4/4: Sauvegarde en cours...');
+      await new Promise(resolve => setTimeout(resolve, 500)); // Délai pour voir l'étape
       
       const bookmarkData = {
         url,
@@ -357,8 +592,10 @@ export default function AppPage() {
       const savedBookmark = await saveResponse.json();
       console.log('Bookmark saved successfully:', savedBookmark);
       
-      // Finalisation
+      // Finalisation - mais garder en loading pour montrer "finished"
       updateBookmarkStep('finished');
+      console.log('🎉 Processus terminé avec succès !');
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Délai pour voir l'étape "finished"
       
       // Marquer comme terminé avec toutes les données collectées
       const finalBookmark: Bookmark = {
@@ -378,7 +615,15 @@ export default function AppPage() {
         b.id === bookmarkId ? finalBookmark : b
       ));
       
-      setCurrentProgress({ step: 'idle' as BookmarkProcessStep, url: '', domain: '' });
+      // Forcer un rechargement immédiat pour synchroniser avec l'API
+      setTimeout(() => {
+        loadUserBookmarks();
+      }, 1000);
+      
+      // Garder l'indicateur visible plus longtemps pour voir le résultat
+      setTimeout(() => {
+        setCurrentProgress({ step: 'idle' as BookmarkProcessStep, url: '', domain: '' });
+      }, 3000);
       
       addToast('Bookmark added successfully!', 'success');
       
@@ -453,7 +698,11 @@ export default function AppPage() {
             </button>
           )}
           {/* Menu utilisateur */}
-          <UserMenu userEmail={userEmail} onSignOut={signOut} />
+          <UserMenu 
+            userEmail={userEmail} 
+            displayName={user?.display_name}
+            onSignOut={signOut} 
+          />
         </div>
       </nav>
 
@@ -510,7 +759,10 @@ export default function AppPage() {
                 console.error('Error adding bookmark:', error);
               }
             }}>
-              <div className="relative flex-1">
+              <div className="relative flex-1 flex items-center gap-3">
+                {inputFavicon && (
+                  <img src={inputFavicon} alt="Favicon" className="w-5 h-5 flex-shrink-0 rounded-sm" />
+                )}
                 <input
                   type="text"
                   placeholder="Paste a URL"
@@ -541,9 +793,6 @@ export default function AppPage() {
                     }
                   }}
                 />
-                {inputFavicon && (
-                  <img src={inputFavicon} alt="Favicon" className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4" />
-                )}
               </div>
               <button
                 type="submit"
@@ -607,15 +856,32 @@ export default function AppPage() {
                   if (bm.status === 'error' || bm.status === 'loading') return;
                   setSelectedBookmark(bm); // Nouveau popup simple
                 }}
-                onDelete={(bookmark) => {
-                  // Supprime le bookmark du state
-                  setBookmarks((prev) => {
-                    const newBookmarks = prev.filter((b) => b.id !== bookmark.id);
-                    localStorage.setItem('saave_bookmarks', JSON.stringify(newBookmarks));
-                    return newBookmarks;
-                  });
-                  // Ajouter notification de suppression
-                  addToast(`Bookmark deleted successfully`, 'success');
+                onDelete={async (bookmark) => {
+                  try {
+                    console.log('🗑️ Suppression bookmark:', bookmark.id);
+                    
+                    // Supprimer via l'API serveur
+                    const response = await fetch(`/api/bookmarks?id=${bookmark.id}&user_id=${user?.id}`, {
+                      method: 'DELETE',
+                    });
+                    
+                    if (!response.ok) {
+                      throw new Error('Failed to delete bookmark from server');
+                    }
+                    
+                    // Supprimer du state local seulement après succès serveur
+                    setBookmarks((prev) => {
+                      const newBookmarks = prev.filter((b) => b.id !== bookmark.id);
+                      localStorage.setItem('saave_bookmarks', JSON.stringify(newBookmarks));
+                      return newBookmarks;
+                    });
+                    
+                    addToast(`Bookmark deleted successfully`, 'success');
+                    console.log('✅ Bookmark supprimé avec succès');
+                  } catch (error) {
+                    console.error('❌ Erreur suppression:', error);
+                    addToast('Failed to delete bookmark', 'error');
+                  }
                 }}
                 onRetry={(bookmark: Bookmark) => {
                   // Logique pour réessayer l'ajout d'un bookmark en erreur
@@ -660,15 +926,32 @@ export default function AppPage() {
                   if (bm.status === 'error' || bm.status === 'loading') return;
                   setSelectedBookmark(bm); // Nouveau popup simple
                 }}
-                onDelete={(bookmark) => {
-                  // Supprime le bookmark du state
-                  setBookmarks((prev) => {
-                    const newBookmarks = prev.filter((b) => b.id !== bookmark.id);
-                    localStorage.setItem('saave_bookmarks', JSON.stringify(newBookmarks));
-                    return newBookmarks;
-                  });
-                  // Ajouter notification de suppression
-                  addToast(`Bookmark deleted successfully`, 'success');
+                onDelete={async (bookmark) => {
+                  try {
+                    console.log('🗑️ Suppression bookmark:', bookmark.id);
+                    
+                    // Supprimer via l'API serveur
+                    const response = await fetch(`/api/bookmarks?id=${bookmark.id}&user_id=${user?.id}`, {
+                      method: 'DELETE',
+                    });
+                    
+                    if (!response.ok) {
+                      throw new Error('Failed to delete bookmark from server');
+                    }
+                    
+                    // Supprimer du state local seulement après succès serveur
+                    setBookmarks((prev) => {
+                      const newBookmarks = prev.filter((b) => b.id !== bookmark.id);
+                      localStorage.setItem('saave_bookmarks', JSON.stringify(newBookmarks));
+                      return newBookmarks;
+                    });
+                    
+                    addToast(`Bookmark deleted successfully`, 'success');
+                    console.log('✅ Bookmark supprimé avec succès');
+                  } catch (error) {
+                    console.error('❌ Erreur suppression:', error);
+                    addToast('Failed to delete bookmark', 'error');
+                  }
                 }}
                 onRetry={(bookmark) => {
                   // Logique pour réessayer un bookmark en erreur

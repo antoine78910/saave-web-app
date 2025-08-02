@@ -54,9 +54,23 @@ export const useSubscription = (userEmail: string | null) => {
   }, [userEmail]);
 
   const canAddBookmark = (currentBookmarkCount: number): boolean => {
-    if (!subscription) return false;
-    if (subscription.bookmarkLimit === -1) return true; // Plan pro = illimité
-    return currentBookmarkCount < subscription.bookmarkLimit;
+    console.log('🔍 useSubscription: canAddBookmark appelé');
+    console.log('🔍 useSubscription: subscription:', subscription);
+    console.log('🔍 useSubscription: currentBookmarkCount:', currentBookmarkCount);
+    
+    if (!subscription) {
+      console.log('❌ useSubscription: Pas de subscription, retour false');
+      return false;
+    }
+    
+    if (subscription.bookmarkLimit === -1) {
+      console.log('✅ useSubscription: Plan pro illimité, retour true');
+      return true; // Plan pro = illimité
+    }
+    
+    const canAdd = currentBookmarkCount < subscription.bookmarkLimit;
+    console.log(`🔍 useSubscription: ${currentBookmarkCount} < ${subscription.bookmarkLimit} = ${canAdd}`);
+    return canAdd;
   };
 
   const getRemainingBookmarks = (currentBookmarkCount: number): number => {

@@ -61,26 +61,26 @@ export default function BookmarkProgressBar({ currentStep, url, domain, title, f
   const currentProgress = progressSteps.find(s => s.key === currentStep)?.position || 0;
 
   return (
-    <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px] flex items-center justify-center p-4">
+    <div className="absolute inset-0 bg-black/70 backdrop-blur-[1px] flex items-center justify-center p-2">
       <div className="w-full max-w-xs flex flex-col items-center">
-        {/* Icône de l'étape actuelle */}
-        <div className="w-16 h-16 rounded-full bg-green-500/20 border-2 border-green-400 flex items-center justify-center mb-4 animate-pulse">
-          <div className="w-8 h-8 rounded-full bg-green-400 flex items-center justify-center">
-            <div className="w-3 h-3 bg-white rounded-full animate-ping"></div>
+        {/* Icône de l'étape actuelle - compacte */}
+        <div className="w-12 h-12 rounded-full bg-green-500/20 border-2 border-green-400 flex items-center justify-center mb-3 animate-pulse">
+          <div className="w-6 h-6 rounded-full bg-green-400 flex items-center justify-center">
+            <div className="w-2 h-2 bg-white rounded-full animate-ping"></div>
           </div>
         </div>
         
-        {/* Nom de l'étape avec effet brillant */}
-        <div className="relative mb-4">
-          <div className="text-lg font-semibold text-green-400 relative overflow-hidden">
+        {/* Nom de l'étape avec effet brillant - compact */}
+        <div className="relative mb-3">
+          <div className="text-sm font-semibold text-green-400 relative overflow-hidden text-center">
             {currentStepInfo?.label}
             {/* Effet brillant animé */}
             <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent transform -skew-x-12 animate-shine"></div>
           </div>
         </div>
         
-        {/* Barre de progression globale */}
-        <div className="w-full max-w-xs mb-3">
+        {/* Barre de progression globale - compacte */}
+        <div className="w-full max-w-xs mb-2">
           <div className="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
             <div 
               className="h-full bg-gradient-to-r from-green-500 to-green-400 rounded-full transition-all duration-500 ease-out"
@@ -92,16 +92,16 @@ export default function BookmarkProgressBar({ currentStep, url, domain, title, f
           </div>
         </div>
         
-        {/* Compteur d'étapes */}
-        <div className="text-xs text-gray-400 font-medium">
+        {/* Compteur d'étapes - compact */}
+        <div className="text-xs text-gray-400 font-medium mb-3">
           Step {currentStepIndex + 1} of {STEPS.length}
         </div>
 
-        {/* Bouton d'annulation */}
+        {/* Bouton d'annulation - compact */}
         {onCancel && (
           <button 
             onClick={onCancel}
-            className="mt-4 px-3 py-1 bg-red-600/60 hover:bg-red-600/80 text-white text-xs rounded-md transition-colors"
+            className="px-2 py-1 bg-red-600/60 hover:bg-red-600/80 text-white text-xs rounded-md transition-colors"
           >
             Cancel
           </button>

@@ -1,72 +1,94 @@
 import { NextRequest, NextResponse } from 'next/server';
-import Stripe from 'stripe';
-
-// Vérification de la clé Stripe
-if (!process.env.STRIPE_SECRET_KEY) {
-  console.error('❌ STRIPE_SECRET_KEY environment variable is not set');
-}
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '');
+import { readFileSync, existsSync } from 'fs';
+import { join } from 'path';
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const email = searchParams.get('email');
-
-    if (!email) {
-      return NextResponse.json(
-        { error: 'Email is required' },
-        { status: 400 }
-      );
-    }
-
-    // Chercher le client par email
-    const customers = await stripe.customers.list({
-      email: email,
-      limit: 1,
-    });
-
-    if (customers.data.length === 0) {
-      // Utilisateur pas encore client Stripe = plan gratuit
+    
+    console.log('🔧 GET /api/user/subscription [DEV MODE] - Email:', email);
+    
+    if (!email || email === 'No email') {
+      console.log('📧 Email invalide, retour subscription par défaut');
       return NextResponse.json({
+        subscription_type: 'free',
+        subscription_status: 'active',
+        bookmarks_limit: 20,
+        bookmarks_count: 0,
         plan: 'free',
         bookmarkLimit: 20,
-        customerId: null,
+        dev_mode: true
       });
     }
-
-    const customer = customers.data[0];
     
-    // Récupérer les abonnements actifs du client
-    const subscriptions = await stripe.subscriptions.list({
-      customer: customer.id,
-      status: 'active',
-      limit: 1,
-    });
-
-    if (subscriptions.data.length > 0) {
-      const subscription = subscriptions.data[0];
-      return NextResponse.json({
-        plan: 'pro',
-        bookmarkLimit: -1, // -1 = illimité
-        customerId: customer.id,
-        subscriptionId: subscription.id,
-        subscriptionStatus: subscription.status,
-      });
+    // Compter les vrais bookmarks de l'utilisateur
+    let userBookmarksCount = 0;
+    try {
+      const BOOKMARKS_FILE = join(process.cwd(), 'dev-bookmarks.json');
+      if (existsSync(BOOKMARKS_FILE)) {
+        const data = readFileSync(BOOKMARKS_FILE, 'utf8');
+        const allBookmarks = JSON.parse(data);
+        userBookmarksCount = allBookmarks.filter((bookmark: any) => 
+          bookmark.user_id === 'dev-user-123'
+        ).length;
+      }
+    } catch (error) {
+      console.warn('⚠️ Erreur lecture bookmarks pour comptage:', error);
     }
 
-    // Client existe mais pas d'abonnement actif = plan gratuit
-    return NextResponse.json({
-      plan: 'free',
-      bookmarkLimit: 20,
-      customerId: customer.id,
+    // En mode développement, simuler un plan GRATUIT avec limite de 20
+    const mockSubscription = {
+      subscription_type: 'free',
+      subscription_status: 'active',
+      bookmarks_limit: 20, // Pour la compatibilité API
+      bookmarks_count: userBookmarksCount, // Compter les vrais bookmarks
+      plan: 'free', // Plan pour le frontend
+      bookmarkLimit: 20, // Nom utilisé par useSubscription hook
+      dev_mode: true
+    };
+    
+    console.log('✅ Subscription simulée retournée:', mockSubscription);
+    
+    return NextResponse.json(mockSubscription, {
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      },
     });
-
   } catch (error) {
-    console.error('Error checking subscription:', error);
+    console.error('❌ Erreur subscription:', error);
     return NextResponse.json(
-      { error: 'Failed to check subscription status' },
-      { status: 500 }
+      { 
+        error: 'Failed to fetch subscription (dev mode)',
+        subscription_type: 'free',
+        subscription_status: 'active',
+        bookmarks_limit: 20,
+        bookmarks_count: 0,
+        plan: 'free',
+        bookmarkLimit: 20,
+        dev_mode: true
+      },
+      { 
+        status: 500,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        },
+      }
     );
   }
+}
+
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    },
+  });
 }

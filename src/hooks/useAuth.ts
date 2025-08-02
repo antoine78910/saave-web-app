@@ -1,12 +1,10 @@
-"use client";
-
 import { useState, useEffect } from 'react';
-import { createClient } from '@supabase/supabase-js';
 
-interface User {
+export interface User {
   id: string;
   email: string;
   created_at: string;
+  display_name?: string;
 }
 
 export function useAuth() {
@@ -14,64 +12,117 @@ export function useAuth() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Vérifier si les clés Supabase sont disponibles
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-      setLoading(false);
-      return;
-    }
+    let mounted = true;
+    console.log('🔧 useAuth: Initialisation du hook');
 
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-    );
-
-    // Obtenir l'utilisateur actuel
-    const getUser = async () => {
-      const { data: { user }, error } = await supabase.auth.getUser();
-      if (!error && user) {
-        setUser({
-          id: user.id,
-          email: user.email || '',
-          created_at: user.created_at
+    // Mode développement forcé - utilisateur statique
+    console.warn('🔧 Mode développement forcé - utilisateur statique');
+    
+    // Nettoyer complètement localStorage en toute sécurité
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        console.log('🧹 Nettoyage localStorage...');
+        // Supprimer toutes les clés Supabase
+        const keys = Object.keys(localStorage);
+        keys.forEach(key => {
+          if (key.startsWith('sb-')) {
+            try {
+              localStorage.removeItem(key);
+              console.log('🗑️ Supprimé:', key);
+            } catch (e) {
+              console.warn('Impossible de supprimer:', key);
+            }
+          }
         });
       }
+    } catch (error) {
+      console.warn('⚠️ Problème localStorage:', error);
+    }
+    
+    // Forcer un utilisateur de développement (sans localStorage)
+    if (mounted) {
+      console.log('👤 Création utilisateur de développement...');
+      const devUser = {
+        id: 'dev-user-123',
+        email: 'anto.dlebos@gmail.com',
+        created_at: new Date().toISOString(),
+        display_name: 'Antoine Delebos'
+      };
+      
+      setUser(devUser);
       setLoading(false);
-    };
-
-    getUser();
-
-    // Écouter les changements d'authentification
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (session?.user) {
-          setUser({
-            id: session.user.id,
-            email: session.user.email || '',
-            created_at: session.user.created_at
-          });
-        } else {
-          setUser(null);
-        }
-        setLoading(false);
-      }
-    );
-
-    return () => subscription.unsubscribe();
+      console.log('✅ Utilisateur créé:', devUser);
+    }
+    
+    return () => { mounted = false; };
   }, []);
 
+  // Écouter les événements de mise à jour du profil
+  useEffect(() => {
+    if (!user) return;
+
+    const handleProfileUpdate = async (event: Event) => {
+      const customEvent = event as CustomEvent;
+      if (customEvent?.detail?.display_name) {
+        setUser(prevUser => prevUser ? {
+          ...prevUser,
+          display_name: customEvent.detail.display_name
+        } : null);
+      }
+    };
+
+    // Écouter les événements de connexion depuis /auth
+    const handleUserLogin = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      if (customEvent?.detail) {
+        console.log('🔄 Événement de connexion reçu:', customEvent.detail);
+        setUser({
+          id: customEvent.detail.id,
+          email: customEvent.detail.email,
+          created_at: customEvent.detail.created_at,
+          display_name: customEvent.detail.display_name || ''
+        });
+        setLoading(false);
+      }
+    };
+    
+    window.addEventListener('userProfileUpdated', handleProfileUpdate);
+    window.addEventListener('userLoggedIn', handleUserLogin);
+
+    return () => {
+      window.removeEventListener('userProfileUpdated', handleProfileUpdate);
+      window.removeEventListener('userLoggedIn', handleUserLogin);
+    };
+  }, [user]);
+
   const signOut = async () => {
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-      return;
-    }
-
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-    );
-
-    await supabase.auth.signOut();
+    console.log('🚪 Déconnexion en cours...');
+    
+    // Effacer les données locales
     setUser(null);
+    
+    if (typeof window !== 'undefined') {
+      // Nettoyer toutes les données liées à l'authentification
+      try {
+        localStorage.removeItem('saave_user_profile');
+        
+        // Nettoyer les sessions Supabase
+        const keys = Object.keys(localStorage);
+        keys.forEach(key => {
+          if (key.startsWith('sb-')) {
+            console.log('🧹 Suppression:', key);
+            localStorage.removeItem(key);
+          }
+        });
+      } catch (error) {
+        console.warn('⚠️ Erreur nettoyage localStorage:', error);
+      }
+    }
+    
+    console.log('✅ Déconnexion terminée, redirection vers /auth');
+    // Rediriger vers la page d'authentification
+    window.location.href = '/auth';
   };
 
   return { user, loading, signOut };
-} 
+}

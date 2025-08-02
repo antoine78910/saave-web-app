@@ -124,7 +124,7 @@ const Navbar = ({
           <Link href="/" className="text-sm font-medium hover:text-primary transition-colors">
             Home
           </Link>
-          <Link href="#pricing" className="text-sm font-medium hover:text-primary transition-colors">
+          <Link href="#pricing" className="text-sm font-medium hover:text-primary transition-colors scroll-smooth">
             Pricing
           </Link>
           <Link 

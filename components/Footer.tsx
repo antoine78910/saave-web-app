@@ -11,13 +11,13 @@ const Footer = () => {
           </div>
           
           <div className="flex items-center gap-6 text-sm text-muted-foreground">
-            <a href="#" className="hover:text-foreground transition-colors">
+            <a href="/privacy" className="hover:text-foreground transition-colors">
               Privacy Policy
             </a>
-            <a href="#" className="hover:text-foreground transition-colors">
+            <a href="/terms" className="hover:text-foreground transition-colors">
               Terms of Service
             </a>
-            <a href="#" className="hover:text-foreground transition-colors">
+            <a href="mailto:support@saave.io" className="hover:text-foreground transition-colors">
               Contact
             </a>
           </div>

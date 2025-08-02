@@ -1,82 +1,135 @@
-# 🔖 Saave - Extension Chrome
+## Saave Chrome Extension - Version Popup
 
-Extension Chrome pour ajouter instantanément des bookmarks à votre collection Saave d'un simple clic !
+Extension Chrome moderne avec interface popup pour ajouter rapidement des bookmarks à votre collection Saave.
 
-## ✨ Fonctionnalités
+### ✨ Nouvelles Fonctionnalités
 
-- ✅ **Ajout en un clic** - Cliquez sur l'icône pour sauvegarder la page courante
-- 📄 **Métadonnées automatiques** - Extrait le titre, description, favicon et thumbnail
-- 🔐 **Connexion automatique** - Détecte votre session Saave existante
-- 🔔 **Notifications** - Confirmations de succès/échec
-- 🌐 **Support universel** - Fonctionne sur tous les sites web
+- **Interface Popup Modern** : Popup élégant avec suivi des étapes en temps réel
+- **Icônes Saave** : Nouveau design avec le logo Saave
+- **Suivi d'Étapes** : Visualisation du processus (Analyse → Métadonnées → Screenshot → Sauvegarde)
+- **Feedback Visuel** : Animations et indicateurs de progression
+- **Gestion d'Erreurs** : Messages d'erreur clairs et possibilité de réessayer
 
-## 📦 Installation
+### 🚀 Installation
 
-### 1. Préparer l'extension
-1. Téléchargez ou clonez ce dossier `saave-extension`
-2. Assurez-vous que votre application Saave est lancée sur `http://localhost:3000` (ou autre port)
+1. **Générer les icônes** (optionnel) :
+   - Ouvrir `generate-saave-icons.html` dans votre navigateur
+   - Télécharger les 3 icônes dans le dossier `icons/`
 
-### 2. Installer dans Chrome
-1. Ouvrez Chrome et allez à `chrome://extensions/`
-2. Activez le **"Mode développeur"** (toggle en haut à droite)
-3. Cliquez sur **"Charger l'extension non empaquetée"**
-4. Sélectionnez le dossier `saave-extension`
-5. L'icône Saave apparaît dans la barre d'outils ! 🎉
+2. **Installer l'extension** :
+   - Ouvrir Chrome → `chrome://extensions/`
+   - Activer le "Mode développeur" (coin supérieur droit)
+   - Cliquer "Charger l'extension non empaquetée"
+   - Sélectionner le dossier `saave-extension`
 
-## 🚀 Utilisation
+3. **Épingler l'extension** (recommandé) :
+   - Cliquer sur l'icône puzzle 🧩 dans Chrome
+   - Épingler l'extension Saave pour un accès rapide
 
-### Première utilisation
-1. **Connectez-vous** à votre app Saave sur `http://localhost:3000`
-2. L'extension détectera automatiquement votre session
+### 📱 Utilisation
 
-### Ajouter un bookmark
-1. Naviguez vers n'importe quelle page web
-2. Cliquez sur l'icône Saave dans la barre d'outils
-3. ✅ Le bookmark est automatiquement ajouté avec toutes les métadonnées !
+1. **Démarrer l'app Saave** : `npm run dev` (port 3000-3010)
+2. **Se connecter** dans l'application web Saave
+3. **Naviguer** vers une page à sauvegarder
+4. **Cliquer** sur l'icône Saave épinglée
+5. **Popup vert simple** : "Envoyer vers Saave.io"
+6. **Redirection automatique** vers l'app pour voir toutes les étapes dans le terminal
+7. **Terminé** ! Le bookmark est ajouté avec tags, description et screenshot complets
 
-## 🔧 Configuration
+### 🎯 Interface Popup
 
-L'extension recherche automatiquement votre serveur Saave sur les ports :
-- `3000` à `3010`
+Le popup affiche :
+- **Design vert Saave.io** : Logo et bouton verts
+- **Informations de la page** : URL et titre actuels
+- **Bouton simple** : "Envoyer vers Saave.io"
+- **Message de succès** : "URL envoyée ! Traitement en cours dans Saave.io"
+- **Fermeture automatique** : 2 secondes après succès
+- **Gestion d'erreurs** : Messages clairs + bouton "Réessayer"
 
-Si votre app Saave utilise un autre port, modifiez le tableau `API_PORTS` dans `background.js`.
+**Workflow :**
+1. **Popup** → Envoie juste l'URL à la webapp
+2. **Redirection** → Ouvre/active l'onglet Saave.io
+3. **Webapp** → Lance automatiquement le processus complet visible dans le terminal :
+   - 🔍 **Scraping** - Analyse de la page
+   - 📊 **Métadonnées** - Titre, description, tags via IA
+   - 📸 **Screenshot** - Capture d'écran (Puppeteer + R2)
+   - 💾 **Sauvegarde** - Ajout à votre collection
+4. **Résultat** → Bookmark complet avec tags, description, screenshot
 
-## 🐛 Dépannage
+### ⚙️ Configuration Automatique
 
-### "Aucun serveur Saave trouvé"
-- Vérifiez que votre app Saave est lancée
-- L'URL doit être accessible sur `http://localhost:XXXX`
+L'extension détecte automatiquement :
+- **Serveur Saave** sur les ports : 3000-3010
+- **Utilisateur connecté** via localStorage ou onglets ouverts
+- **Page valide** (exclut chrome:// et autres pages système)
 
-### "Connexion requise"
-- Connectez-vous sur votre app Saave dans Chrome
-- L'extension ouvrira automatiquement l'onglet de connexion
+### 🛠️ Dépannage
 
-### "Impossible de sauvegarder cette page"
-- L'extension ne fonctionne pas sur les pages Chrome internes
-- Essayez sur une page web classique (http/https)
+**Extension ne fonctionne pas ?**
+1. ✅ App Saave lancée (`npm run dev`)
+2. ✅ Connecté dans l'application web
+3. ✅ Page web normale (pas chrome:// ou extension://)
+4. 🔍 Console Chrome (F12) pour voir les logs
 
-## 🛠️ Développement
+**Popup ne s'ouvre pas ?**
+- Vérifier que `popup.html` est dans le dossier
+- Recharger l'extension dans `chrome://extensions/`
 
-Structure de l'extension :
+**Étapes bloquées ?**
+- Vérifier la connexion réseau vers localhost
+- Vérifier que l'utilisateur est bien connecté
+
+### 🔧 Développement
+
+**Structure des fichiers :**
 ```
 saave-extension/
-├── manifest.json       # Configuration de l'extension
-├── background.js       # Script principal
-├── icons/             
-│   ├── icon16.png      # Icône 16x16
-│   ├── icon48.png      # Icône 48x48
-│   └── icon128.png     # Icône 128x128
-└── README.md          # Cette documentation
+├── manifest.json          # Configuration extension
+├── popup.html             # Interface utilisateur
+├── popup.js               # Logique popup
+├── background.js          # Service worker
+├── icons/                 # Icônes Saave
+│   ├── icon16.png
+│   ├── icon48.png
+│   └── icon128.png
+└── generate-saave-icons.html  # Générateur d'icônes
 ```
 
-## 📝 Logs
+**Workflow de développement :**
+1. Modifier les fichiers
+2. `chrome://extensions/` → Recharger l'extension
+3. Tester le popup et les fonctionnalités
+4. Vérifier les logs dans la console background
 
-Pour déboguer, ouvrez la console des outils de développement Chrome :
-1. `chrome://extensions/`
-2. Cliquez sur "Détails" de l'extension Saave
-3. Cliquez sur "Afficher les vues : service worker"
-4. Les logs de l'extension s'affichent dans la console
+### 📡 Communication Extension ↔ Webapp
 
----
+L'extension communique avec l'app Saave via :
+- **Détection de port** : Scan automatique 3000-3010
+- **Authentification** : Vérification user connecté
+- **Envoi d'URL** : sessionStorage + événements personnalisés
+- **Redirection** : Activation/création d'onglet webapp
+- **Messages temps réel** : Background ↔ Popup simple
 
-**Développé pour Saave** - Gestionnaire de bookmarks moderne 🚀
+**Méthodes de communication :**
+1. **Onglet existant** : Injection script + événement `extensionBookmarkRequest`
+2. **Pas d'onglet** : Création avec paramètre `?extensionUrl=...`
+3. **Fallback** : sessionStorage `extensionBookmarkUrl`
+
+**Avantages :**
+- ✅ **Popup simple** : Design vert minimaliste
+- ✅ **Processus visible** dans la webapp + terminal
+- ✅ **Données complètes** (tags, description, screenshot)
+- ✅ **UX fluide** : Redirection automatique
+
+### 🎨 Personnalisation
+
+**Modifier les icônes :**
+1. Ouvrir `generate-saave-icons.html`
+2. Modifier les couleurs dans le gradient CSS
+3. Télécharger les nouvelles icônes
+4. Recharger l'extension
+
+**Modifier l'interface :**
+- `popup.html` : Structure et styles
+- `popup.js` : Logique et interactions
+- `background.js` : Communication API

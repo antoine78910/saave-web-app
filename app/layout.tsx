@@ -11,7 +11,7 @@ const roboto = Roboto({
 
 export const metadata: Metadata = {
   title: "Saave - Organize nothing. Find everything.",
-  description: "Save it now—find it in seconds, whether it's an article, video, post, or tool.",
+  description: "Saave - find it in seconds, whether it's an article, video, post, or tool.",
   icons: {
     icon: '/favicon.png',
     shortcut: '/favicon.png',

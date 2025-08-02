@@ -4,23 +4,27 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { MapPin, Zap, Bot, Tag, Search, Image } from "lucide-react";
 import { useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "../hooks/useAuth";
 
 const Hero = () => {
   const [url, setUrl] = useState("");
+  const { user, loading } = useAuth();
 
   const handleSaveLink = async () => {
     if (!url.trim()) return;
     
-    const { data: { session } } = await supabase.auth.getSession();
+    console.log('🔗 Tentative de sauvegarde du lien:', url);
+    console.log('👤 Utilisateur actuel:', user);
     
-    if (!session) {
+    if (!user) {
       // Store URL in sessionStorage and redirect to auth
       sessionStorage.setItem('pendingBookmarkUrl', url);
+      console.log('🔄 Redirection vers /auth (pas connecté)');
       window.location.href = '/auth';
     } else {
       // User is logged in, redirect to app with URL
       sessionStorage.setItem('pendingBookmarkUrl', url);
+      console.log('🔄 Redirection vers /app (connecté)');
       window.location.href = '/app';
     }
   };
@@ -55,7 +59,7 @@ const Hero = () => {
                 Organize nothing. Find everything.
               </h1>
               <p className="text-xl text-muted-foreground max-w-lg">
-                Save it now—find it in seconds, whether it's an article, video, post, or tool.
+                Saave.io —find it in seconds, whether it's an article, video, post, or tool.
               </p>
             </div>
 

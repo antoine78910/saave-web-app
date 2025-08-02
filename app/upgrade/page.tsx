@@ -59,7 +59,7 @@ export default function UpgradePage() {
         {/* Colonne gauche : features */}
         <div className="flex-1 flex flex-col gap-7 min-w-[260px]">
           <h1 className="text-3xl sm:text-4xl font-bold mb-2">Never lose an important link again.</h1>
-          <p className="text-gray-300 mb-2 text-lg">Save it now—find it in seconds, whether it&apos;s an article, video, post, or tool.</p>
+          <p className="text-gray-300 mb-2 text-lg">Saave.io —find it in seconds, whether it&apos;s an article, video, post, or tool.</p>
           <ul className="flex flex-col gap-4 mt-4">
             <li className="flex items-start gap-3">
               <span className="text-xl">⚡</span>
@@ -104,10 +104,21 @@ export default function UpgradePage() {
             <div className="flex items-center justify-between mb-2">
               <span className="font-bold text-lg"><span className="text-white">Saave</span><span className="text-accent">.pro</span></span>
               <div className="flex flex-col items-center">
-                <span className="text-green-400 text-[11px] font-bold mb-0.5">-45%</span>
-                <div className="flex gap-1 bg-[#181a1b] rounded-full p-1">
-                  <button className={`px-3 py-1 rounded-full text-xs font-semibold transition ${!yearly ? 'bg-accent text-white' : 'text-gray-400'}`} onClick={() => setYearly(false)}>Monthly</button>
-                  <button className={`px-3 py-1 rounded-full text-xs font-semibold transition ${yearly ? 'bg-accent text-white' : 'text-gray-400'}`} onClick={() => setYearly(true)}>Yearly</button>
+                <div className="flex items-center gap-2">
+                  <div className="flex gap-1 bg-[#181a1b] rounded-full p-1 relative">
+                    <button className={`px-3 py-1 rounded-full text-xs font-semibold transition ${!yearly ? 'bg-accent text-white' : 'text-gray-400'}`} onClick={() => setYearly(false)}>Monthly</button>
+                    <button className={`px-3 py-1 rounded-full text-xs font-semibold transition ${yearly ? 'bg-accent text-white' : 'text-gray-400'} relative`} onClick={() => setYearly(true)}>
+                      Yearly
+                      <span className="absolute -top-2 -right-2 bg-green-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full shadow-sm">
+                        -45%
+                      </span>
+                    </button>
+                  </div>
+                  {yearly && (
+                    <span className="bg-gradient-to-r from-green-500 to-green-400 text-white text-[9px] font-bold px-2 py-1 rounded-full shadow-sm whitespace-nowrap">
+                      💰 Best Deal
+                    </span>
+                  )}
                 </div>
               </div>
             </div>

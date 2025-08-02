@@ -2,34 +2,35 @@
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Check } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useAuth } from "../hooks/useAuth";
 
 const Pricing = () => {
   const navigate = useNavigate();
-  const [user, setUser] = useState<any>(null);
-
-  useEffect(() => {
-    const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setUser(user);
-    };
-    getUser();
-  }, []);
+  const { user, loading } = useAuth();
 
   const handleGetStarted = () => {
+    console.log('🚀 Get Started cliqué');
+    console.log('👤 Utilisateur actuel:', user);
+    
     if (user) {
+      console.log('🔄 Redirection vers /app (connecté)');
       navigate('/app');
     } else {
+      console.log('🔄 Redirection vers /auth (pas connecté)');
       navigate('/auth');
     }
   };
 
   const handleStartTrial = () => {
+    console.log('🎯 Start Trial cliqué');
+    console.log('👤 Utilisateur actuel:', user);
+    
     if (user) {
+      console.log('🔄 Redirection vers /upgrade (connecté)');
       navigate('/upgrade');
     } else {
+      console.log('🔄 Redirection vers /auth puis /upgrade (pas connecté)');
       sessionStorage.setItem('redirectAfterAuth', '/upgrade');
       navigate('/auth');
     }
@@ -69,7 +70,7 @@ const Pricing = () => {
   ];
 
   return (
-    <section className="py-24 bg-background">
+    <section id="pricing" className="py-24 bg-background">
       <div className="container mx-auto px-6">
         <div className="text-center space-y-4 mb-16">
           <h2 className="text-3xl font-bold">Pricing</h2>

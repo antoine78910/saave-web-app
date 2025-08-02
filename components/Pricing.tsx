@@ -4,34 +4,35 @@
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { Check } from "lucide-react";
-import { supabase } from "../src/integrations/supabase/client";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useAuth } from "../src/hooks/useAuth";
 
 const Pricing = () => {
   const router = useRouter();
-  const [user, setUser] = useState<{ id: string } | null>(null);
-
-  useEffect(() => {
-    const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setUser(user);
-    };
-    getUser();
-  }, []);
+  const { user, loading } = useAuth();
 
   const handleGetStarted = () => {
+    console.log('🚀 Get Started cliqué');
+    console.log('👤 Utilisateur actuel:', user);
+    
     if (user) {
+      console.log('🔄 Redirection vers /app (connecté)');
       router.push('/app');
     } else {
+      console.log('🔄 Redirection vers /auth (pas connecté)');
       router.push('/auth');
     }
   };
 
   const handleStartTrial = () => {
+    console.log('🎯 Start Trial cliqué');
+    console.log('👤 Utilisateur actuel:', user);
+    
     if (user) {
+      console.log('🔄 Redirection vers /upgrade (connecté)');
       router.push('/upgrade');
     } else {
+      console.log('🔄 Redirection vers /auth puis /upgrade (pas connecté)');
       sessionStorage.setItem('redirectAfterAuth', '/upgrade');
       router.push('/auth');
     }
@@ -43,7 +44,7 @@ const Pricing = () => {
       price: "0",
       description: "Perfect for getting started",
       features: [
-        "Up to 100 bookmarks",
+        "Up to 20 bookmarks",
         "Basic search",
         "Visual previews",
         "Chrome extension"
@@ -71,7 +72,7 @@ const Pricing = () => {
   ];
 
   return (
-    <section className="py-24 bg-background">
+    <section id="pricing" className="py-24 bg-background">
       <div className="container mx-auto px-6">
         <div className="text-center space-y-4 mb-16">
           <h2 className="text-3xl font-bold">Pricing</h2>

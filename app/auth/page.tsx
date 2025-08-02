@@ -38,9 +38,45 @@ export default function AuthPage() {
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Ne pas continuer si les clés Supabase ne sont pas disponibles
+    // Mode développement : simuler une connexion réussie
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-      setAuthError("Configuration Supabase manquante. Veuillez configurer vos variables d'environnement.");
+      setIsLoading(true);
+      showToast('Connexion simulée (mode développement)...', 'success');
+      
+      // Sauvegarder les informations utilisateur en localStorage
+      const userProfile = {
+        id: 'dev-user-123',
+        email: email || 'anto.dlebos@gmail.com',
+        display_name: 'Antoine Delebos',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      localStorage.setItem('saave_user_profile', JSON.stringify(userProfile));
+      console.log('💾 Profil utilisateur sauvegardé:', userProfile);
+      
+      // Déclencher un événement pour notifier useAuth de la mise à jour
+      window.dispatchEvent(new CustomEvent('userLoggedIn', {
+        detail: userProfile
+      }));
+      
+      setTimeout(() => {
+        // Vérifier s'il y a une redirection stockée
+        const redirectAfterAuth = sessionStorage.getItem('redirectAfterAuth');
+        const pendingBookmarkUrl = sessionStorage.getItem('pendingBookmarkUrl');
+        
+        if (redirectAfterAuth) {
+          console.log('🔄 Redirection vers:', redirectAfterAuth);
+          sessionStorage.removeItem('redirectAfterAuth');
+          window.location.href =(redirectAfterAuth);
+        } else if (pendingBookmarkUrl) {
+          console.log('🔗 Redirection vers /app avec lien pending:', pendingBookmarkUrl);
+          window.location.href =('/app');
+        } else {
+          console.log('🔄 Redirection par défaut vers /app');
+          window.location.href =('/app');
+        }
+        setIsLoading(false);
+      }, 1000);
       return;
     }
 
@@ -62,9 +98,23 @@ export default function AuthPage() {
 
         if (error) throw error;
 
-        showToast('Welcome back! Redirecting to your dashboard...', 'success');
+        showToast('Welcome back! Redirecting...', 'success');
         setTimeout(() => {
-          router.push('/app');
+          // Vérifier s'il y a une redirection stockée
+          const redirectAfterAuth = sessionStorage.getItem('redirectAfterAuth');
+          const pendingBookmarkUrl = sessionStorage.getItem('pendingBookmarkUrl');
+          
+          if (redirectAfterAuth) {
+            console.log('🔄 Redirection vers:', redirectAfterAuth);
+            sessionStorage.removeItem('redirectAfterAuth');
+            window.location.href =(redirectAfterAuth);
+          } else if (pendingBookmarkUrl) {
+            console.log('🔗 Redirection vers /app avec lien pending:', pendingBookmarkUrl);
+            window.location.href =('/app');
+          } else {
+            console.log('🔄 Redirection par défaut vers /app');
+            window.location.href =('/app');
+          }
           router.refresh();
         }, 1000);
       } else {
@@ -90,9 +140,45 @@ export default function AuthPage() {
   };
 
   const handleGoogleSignIn = async () => {
-    // Ne pas continuer si les clés Supabase ne sont pas disponibles
+    // Mode développement : simuler une connexion Google
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-      setAuthError("Configuration Supabase manquante. Veuillez configurer vos variables d'environnement.");
+      setIsLoading(true);
+      showToast('Connexion Google simulée (mode développement)...', 'success');
+      
+      // Sauvegarder les informations utilisateur en localStorage
+      const userProfile = {
+        id: 'dev-user-123',
+        email: 'anto.dlebos@gmail.com',
+        display_name: 'Antoine Delebos',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      localStorage.setItem('saave_user_profile', JSON.stringify(userProfile));
+      console.log('💾 Profil utilisateur Google sauvegardé:', userProfile);
+      
+      // Déclencher un événement pour notifier useAuth de la mise à jour
+      window.dispatchEvent(new CustomEvent('userLoggedIn', {
+        detail: userProfile
+      }));
+      
+      setTimeout(() => {
+        // Vérifier s'il y a une redirection stockée
+        const redirectAfterAuth = sessionStorage.getItem('redirectAfterAuth');
+        const pendingBookmarkUrl = sessionStorage.getItem('pendingBookmarkUrl');
+        
+        if (redirectAfterAuth) {
+          console.log('🔄 Redirection vers:', redirectAfterAuth);
+          sessionStorage.removeItem('redirectAfterAuth');
+          window.location.href =(redirectAfterAuth);
+        } else if (pendingBookmarkUrl) {
+          console.log('🔗 Redirection vers /app avec lien pending:', pendingBookmarkUrl);
+          window.location.href =('/app');
+        } else {
+          console.log('🔄 Redirection par défaut vers /app');
+          window.location.href =('/app');
+        }
+        setIsLoading(false);
+      }, 1000);
       return;
     }
 
