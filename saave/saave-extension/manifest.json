@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "Saave",
+  "version": "1.0.0",
+  "description": "Sauvegarde intelligente de liens.",
+  "action": {
+    "default_title": "Ajouter à Saave",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/favicon.png",
+      "48": "icons/favicon.png",
+      "128": "icons/favicon.png"
+    }
+  },
+  "icons": {
+    "16": "icons/favicon.png",
+    "48": "icons/favicon.png",
+    "128": "icons/favicon.png"
+  },
+  "permissions": [
+    "storage",
+    "tabs",
+    "scripting"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  }
+}
