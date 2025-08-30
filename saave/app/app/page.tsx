@@ -7,6 +7,7 @@ import BookmarkPopup from "../../components/BookmarkPopup";
 // import BookmarkProgressBar, { BookmarkProcessStep } from "../../components/BookmarkProgressBar"; // Temporarily unused
 import { BookmarkCard } from "../../components/BookmarkCard";
 import { Bookmark } from "../../components/BookmarkGrid";
+type BookmarkProcessStep = 'idle' | 'scraping' | 'metadata' | 'screenshot' | 'saving' | 'finished' | 'error';
 import { ToastManager, ToastItem } from "../../components/Toast";
 import { useSubscription } from "../../src/hooks/useSubscription";
 import { useAuth } from "../../src/hooks/useAuth";
@@ -153,17 +154,15 @@ export default function AppPage() {
             return;
           }
           
-          console.log('✅ WEBAPP: Subscription chargée, déclenchement auto-submit dans 500ms...');
-          setTimeout(() => {
-            const addButton = document.querySelector('form button[data-slot="button"]');
-            console.log('🔍 WEBAPP: Bouton trouvé:', addButton);
-            if (addButton instanceof HTMLElement) {
-              console.log('🚀 WEBAPP: Ajout automatique du bookmark depuis extension');
-              addButton.click();
-            } else {
-              console.error('❌ WEBAPP: Bouton d\'ajout non trouvé!');
+          console.log('✅ WEBAPP: Subscription chargée, déclenchement auto-submit immédiat...');
+          // Soumission directe sans dépendre du bouton
+          (async () => {
+            try {
+              await handleAddBookmark(event.detail.url);
+            } catch (e) {
+              console.error('❌ WEBAPP: Auto-submit direct échoué:', e);
             }
-          }, 500);
+          })();
         };
         
         tryAutoSubmit();
@@ -206,10 +205,12 @@ export default function AppPage() {
       if (typeof window !== 'undefined' && user) {
         const urlParams = new URLSearchParams(window.location.search);
         const extensionUrl = urlParams.get('extensionUrl');
+        const extUrl2 = urlParams.get('url'); // support chrome action injection
         
-        if (extensionUrl) {
-          console.log('🔗 URL depuis extension (URL params):', extensionUrl);
-          setInputUrl(extensionUrl);
+        const candidate = extensionUrl || extUrl2;
+        if (candidate) {
+          console.log('🔗 URL depuis extension (URL params):', candidate);
+          setInputUrl(candidate);
           
           // Nettoyer l'URL
           const newUrl = window.location.pathname;
@@ -274,6 +275,7 @@ export default function AppPage() {
     x: number;
     y: number;
     bookmark: Bookmark | null;
+    visible?: boolean;
   } | null>(null);
   
 
@@ -494,6 +496,12 @@ export default function AppPage() {
       
       // Scraping du contenu
       try {
+        // Extension: signaler démarrage
+        if (typeof window !== 'undefined') {
+          const ev = new CustomEvent('saave:add-started', { detail: { url } });
+          window.dispatchEvent(ev);
+          document.dispatchEvent(ev);
+        }
         console.log('🔍 Étape 1/4: Scraping en cours...');
         await new Promise(resolve => setTimeout(resolve, 500)); // Délai réduit pour voir l'étape plus tôt
         
@@ -515,6 +523,11 @@ export default function AppPage() {
       // Extraction des métadonnées
       try {
         updateBookmarkStep('metadata');
+        if (typeof window !== 'undefined') {
+          const ev = new CustomEvent('saave:add-progress', { detail: { step: 'metadata' } });
+          window.dispatchEvent(ev);
+          document.dispatchEvent(ev);
+        }
         console.log('📊 Étape 2/4: Extraction des métadonnées...');
         await new Promise(resolve => setTimeout(resolve, 500)); // Délai réduit
         
@@ -547,6 +560,11 @@ export default function AppPage() {
       // Capture d'écran
       try {
         updateBookmarkStep('screenshot');
+        if (typeof window !== 'undefined') {
+          const ev = new CustomEvent('saave:add-progress', { detail: { step: 'screenshot' } });
+          window.dispatchEvent(ev);
+          document.dispatchEvent(ev);
+        }
         console.log('📸 Étape 3/4: Capture d\'écran avec Puppeteer...');
         await new Promise(resolve => setTimeout(resolve, 500)); // Délai avant screenshot
         
@@ -568,6 +586,11 @@ export default function AppPage() {
       
       // Sauvegarde via API
       updateBookmarkStep('saving');
+      if (typeof window !== 'undefined') {
+        const ev = new CustomEvent('saave:add-progress', { detail: { step: 'saving' } });
+        window.dispatchEvent(ev);
+        document.dispatchEvent(ev);
+      }
       console.log('💾 Étape 4/4: Sauvegarde en cours...');
       await new Promise(resolve => setTimeout(resolve, 500)); // Délai pour voir l'étape
       
@@ -599,6 +622,11 @@ export default function AppPage() {
       
       // Finalisation - mais garder en loading pour montrer "finished"
       updateBookmarkStep('finished');
+      if (typeof window !== 'undefined') {
+        const ev = new CustomEvent('saave:add-finished', { detail: { url } });
+        window.dispatchEvent(ev);
+        document.dispatchEvent(ev);
+      }
       console.log('🎉 Processus terminé avec succès !');
       await new Promise(resolve => setTimeout(resolve, 2000)); // Délai pour voir l'étape "finished"
       
@@ -634,6 +662,11 @@ export default function AppPage() {
       
     } catch (error: any) {
       console.error('Error adding bookmark:', error);
+      if (typeof window !== 'undefined') {
+        const ev = new CustomEvent('saave:add-error', { detail: { message: (error as any)?.message || 'unknown' } });
+        window.dispatchEvent(ev);
+        document.dispatchEvent(ev);
+      }
       setBookmarks(prev => prev.map(b => 
         b.id === bookmarkId 
           ? { ...b, status: 'error', error: error.message }

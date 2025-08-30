@@ -420,133 +420,128 @@ async function addBookmarkToSaave(bookmarkData, port) {
 }
 
 // Fonction pour afficher les notifications
-function showNotification(title, message, type = 'basic') {
+function showNotification(title, message) {
+  const safeTitle = String(title || 'Saave');
+  const safeMessage = String(message || '');
+  const icon = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL)
+    ? chrome.runtime.getURL('icons/icon48.png')
+    : undefined;
   try {
-    const notificationOptions = {
-      type: type,
-      title: title,
-      message: message,
-      iconUrl: chrome.runtime.getURL('icons/icon48.svg')
-    };
-    
-    chrome.notifications.create(`saave-${Date.now()}`, notificationOptions, function(notificationId) {
-      if (chrome.runtime.lastError) {
-        console.error('Erreur notification:', chrome.runtime.lastError);
-        // Fallback sans icône
-        chrome.notifications.create(`saave-fallback-${Date.now()}`, {
-          type: type,
-          title: title,
-          message: message
-        });
-      }
-    });
-  } catch (error) {
-    console.error('Erreur lors de l\'affichage de la notification:', error);
+    if (typeof chrome !== 'undefined' && chrome.notifications && chrome.notifications.create) {
+      chrome.notifications.create(`saave-${Date.now()}`, {
+        type: 'basic',
+        title: safeTitle,
+        message: safeMessage,
+        iconUrl: icon || 'icon.png'
+      });
+      return;
+    }
+  } catch (err) {
+    // fallthrough to service worker notification
+  }
+  try {
+    if (self && self.registration && self.registration.showNotification) {
+      self.registration.showNotification(safeTitle, {
+        body: safeMessage,
+        icon: icon,
+      });
+    }
+  } catch (err2) {
+    console.warn('Notification fallback failed:', err2);
   }
 }
 
-// Gestionnaire principal - clic sur l'icône de l'extension
-chrome.action.onClicked.addListener(async (tab) => {
+// Gestionnaire principal - clic sur l'icône de l'extension (sans ouvrir/rediriger d'onglet)
+(chrome.action && chrome.action.onClicked ? chrome.action.onClicked : chrome.browserAction.onClicked).addListener(async (tab) => {
   try {
     console.log('🚀 Extension Saave activée pour:', tab.url);
-    
-    // Vérifier que l'URL est valide
+
     if (!tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) {
-      showNotification(
-        '⚠️ Saave - Erreur', 
-        'Impossible de sauvegarder cette page. Essayez sur une page web classique.'
-      );
+      showNotification('⚠️ Saave', 'Ouvrez une page web pour l\'ajouter.');
       return;
     }
 
-    // Rechercher le serveur Saave actif
-    console.log('🔍 Recherche du serveur Saave...');
-    const port = await findActiveSaavePort();
-    
-    // Récupérer l'utilisateur connecté
-    const user = await getCurrentUser(port);
-    
-    if (!user || !user.id) {
-      // Créer une notification cliquable pour la connexion
-      const notificationId = `saave-login-required-${port}`;
-      chrome.notifications.create(notificationId, {
-        type: 'basic',
-        title: '🔐 Saave - Connexion requise',
-        message: `Cliquez ici pour vous connecter sur localhost:${port}`,
-        iconUrl: chrome.runtime.getURL('icons/icon48.png')
+    const urlToAdd = tab.url;
+
+    // Chercher un onglet Saave déjà ouvert (dev/prod)
+    const openTabs = await chrome.tabs.query({});
+    const appTab = openTabs.find(t => t.url && (/\/app(\b|\?)/.test(t.url) && (t.url.includes('saave.io') || /localhost:\\d+/.test(t.url))));
+
+    if (appTab) {
+      console.log('🎯 Onglet /app trouvé, envoi d\'un événement sans navigation');
+      await chrome.scripting.executeScript({
+        target: { tabId: appTab.id },
+        func: (u) => {
+          window.dispatchEvent(new CustomEvent('extensionBookmarkRequest', { detail: { url: u } }));
+        },
+        args: [urlToAdd]
       });
-      
-      console.log(`💡 Pour vous connecter, allez sur: http://localhost:${port}`);
+      showNotification('Saave', 'Ajout en cours dans Saave.');
       return;
     }
 
-    console.log('👤 Utilisateur connecté:', user.email);
-
-    // Extraire les métadonnées de la page
-    console.log('📄 Extraction des métadonnées...');
-    const metadata = await extractPageMetadata(tab);
-    
-    // Préparer les données du bookmark
-    const bookmarkData = {
-      url: tab.url,
-      title: metadata.title || tab.title || 'Page sans titre',
-      description: metadata.description || '',
-      favicon: metadata.favicon || '',
-      thumbnail: metadata.thumbnail || '',
-      user_id: user.id,
-      category_id: null,
-      tags: []
-    };
-
-    // Ajouter le bookmark
-    await addBookmarkToSaave(bookmarkData, port);
-    
-    // Notification de succès
-    showNotification(
-      '✅ Saave - Succès', 
-      `"${bookmarkData.title}" ajouté à vos bookmarks !`
-    );
-    
+    // Pas d'onglet app: mémoriser l'URL et prévenir l'utilisateur
+    await chrome.storage.local.set({ pendingBookmarkUrl: urlToAdd });
+    showNotification('Saave', 'Ouvrez Saave (/app). L\'ajout se fera automatiquement.');
   } catch (error) {
     console.error('❌ Erreur dans l\'extension:', error);
-    showNotification(
-      '❌ Saave - Erreur', 
-      error.message || 'Impossible d\'ajouter le bookmark. Réessayez.'
-    );
+    showNotification('❌ Saave - Erreur', error.message || 'Impossible d\'ajouter le bookmark.');
   }
 });
 
-// Écouter les changements d'onglets pour détecter la connexion Saave
+// À l'ouverture/chargement d'un onglet Saave /app, si une URL est en attente, l'injecter
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete' && tab.url) {
-    for (const port of API_PORTS) {
-      if (tab.url.includes(`localhost:${port}`)) {
-        console.log('🎯 Onglet Saave détecté, tentative de récupération de l\'utilisateur...');
-        try {
-          const user = await getCurrentUser(port);
-          if (user && user.id) {
-            await chrome.storage.local.set({ saave_user: user });
-            console.log('💾 Utilisateur sauvegardé:', user.email);
-          }
-        } catch (error) {
-          console.log('⚠️ Impossible de récupérer l\'utilisateur:', error);
-        }
-        break;
-      }
+  if (changeInfo.status !== 'complete' || !tab.url) return;
+  const isApp = /\/app(\b|\?)/.test(tab.url) && (tab.url.includes('saave.io') || /localhost:\\d+/.test(tab.url));
+  if (!isApp) return;
+
+  const { pendingBookmarkUrl } = await chrome.storage.local.get(['pendingBookmarkUrl']);
+  if (!pendingBookmarkUrl) return;
+
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: (u) => {
+        window.dispatchEvent(new CustomEvent('extensionBookmarkRequest', { detail: { url: u } }));
+      },
+      args: [pendingBookmarkUrl]
+    });
+    await chrome.storage.local.remove(['pendingBookmarkUrl']);
+    showNotification('Saave', 'Ajout en cours dans Saave.');
+  } catch (e) {
+    console.warn('⚠️ Injection auto échouée:', e);
+  }
+});
+
+// Écoute les messages du content script pour afficher des toasts système
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg && typeof msg === 'object' && msg.type) {
+    if (msg.type === 'saave:add-started') {
+      showNotification('Saave', 'Adding bookmark...');
+    }
+    if (msg.type === 'saave:add-progress') {
+      showNotification('Saave', `Processing: ${msg.detail?.step || ''}`);
+    }
+    if (msg.type === 'saave:add-finished') {
+      showNotification('Saave', 'Bookmark added ✅');
+    }
+    if (msg.type === 'saave:add-error') {
+      showNotification('Saave', `Error: ${msg.detail?.message || ''}`);
     }
   }
 });
 
 // Gestionnaire de clic sur les notifications
-chrome.notifications.onClicked.addListener(async (notificationId) => {
-  if (notificationId.startsWith('saave-login-required')) {
-    // Extraire le port de l'ID de notification
-    const port = notificationId.split('-').pop();
-    if (port && !isNaN(port)) {
-      chrome.tabs.create({ url: `http://localhost:${port}` });
+if (chrome.notifications && chrome.notifications.onClicked) {
+  chrome.notifications.onClicked.addListener(async (notificationId) => {
+    if (notificationId.startsWith('saave-login-required')) {
+      const port = notificationId.split('-').pop();
+      if (port && !isNaN(port)) {
+        chrome.tabs.create({ url: `http://localhost:${port}` });
+      }
     }
-  }
-});
+  });
+}
 
 // Initialisation de l'extension
 chrome.runtime.onInstalled.addListener(() => {

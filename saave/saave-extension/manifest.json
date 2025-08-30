@@ -5,7 +5,6 @@
   "description": "Sauvegarde intelligente de liens.",
   "action": {
     "default_title": "Ajouter à Saave",
-    "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/favicon.png",
       "48": "icons/favicon.png",
@@ -20,12 +19,23 @@
   "permissions": [
     "storage",
     "tabs",
-    "scripting"
+    "scripting",
+    "notifications"
   ],
   "host_permissions": [
     "<all_urls>"
   ],
   "background": {
     "service_worker": "background.js"
-  }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://localhost/*",
+        "https://saave.io/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ]
 }

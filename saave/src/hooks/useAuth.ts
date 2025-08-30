@@ -99,22 +99,8 @@ export function useAuth() {
     };
   }, []);
 
-  // Rediriger vers /auth si pas connecté (sauf si on est déjà sur /auth)
-  useEffect(() => {
-    const currentPath = typeof window !== 'undefined' ? window.location.pathname : 'server';
-    console.log('🔍 useAuth: Vérification redirection:', {
-      loading,
-      hasUser: !!user,
-      userEmail: user?.email,
-      currentPath,
-      shouldRedirect: !loading && !user && typeof window !== 'undefined' && currentPath !== '/auth'
-    });
-    
-    if (!loading && !user && typeof window !== 'undefined' && currentPath !== '/auth') {
-      console.log('🔄 useAuth: Redirection vers /auth car pas d\'utilisateur connecté');
-      window.location.href = '/auth';
-    }
-  }, [user, loading]);
+  // Ne pas rediriger automatiquement si non connecté.
+  // Les pages protégées et le middleware gèrent la redirection.
 
   // Écouter les événements de mise à jour du profil (optionnel)
   useEffect(() => {

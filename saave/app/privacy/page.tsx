@@ -1,24 +1,9 @@
+import AppTopBar from "../../components/AppTopBar";
+
 export default function PrivacyPage() {
   return (
     <div className="min-h-screen bg-[#181a1b] text-white">
-      {/* Navigation */}
-      <nav className="border-b border-gray-800">
-        <div className="container mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <a href="/" className="text-2xl font-bold">
-              Saave<span className="text-accent">.io</span>
-            </a>
-            <div className="flex items-center gap-4">
-              <a href="/terms" className="text-gray-300 hover:text-white transition-colors">
-                Terms
-              </a>
-              <a href="/app" className="bg-accent text-white px-4 py-2 rounded-lg hover:bg-accent/90 transition-colors">
-                Go to App
-              </a>
-            </div>
-          </div>
-        </div>
-      </nav>
+      <AppTopBar />
       
       <div className="container mx-auto px-6 py-16 max-w-4xl">
         <div className="prose prose-invert max-w-none">

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../src/hooks/useAuth';
 import { createClient } from '@supabase/supabase-js';
+import AppTopBar from '../../components/AppTopBar';
 
 export default function AccountPage() {
   const { user, loading } = useAuth();
@@ -14,7 +15,7 @@ export default function AccountPage() {
   const [message, setMessage] = useState('');
   const [forceShow, setForceShow] = useState(false);
 
-  // Utilisateur par défaut pour le mode développement
+  // Default user for development mode
   const currentUser = user || {
     id: 'dev-user-123',
     email: 'anto.delbos@gmail.com',
@@ -22,13 +23,13 @@ export default function AccountPage() {
     display_name: 'Antoine'
   };
 
-  // Timeout de sécurité pour éviter le chargement infini
+  // Safety timeout to avoid infinite loading
   useEffect(() => {
     const timeout = setTimeout(() => {
       console.log('Forcing show after 3 seconds timeout');
       setForceShow(true);
       
-      // Initialiser avec des données par défaut si pas encore fait
+      // Initialize with defaults if not set
       if (!email && !displayName) {
         setEmail('anto.delbos@gmail.com');
         setDisplayName('Antoine');
@@ -38,14 +39,14 @@ export default function AccountPage() {
     return () => clearTimeout(timeout);
   }, [email, displayName]);
 
-  // Initialiser les champs avec les données utilisateur
+  // Initialize fields from user data
   useEffect(() => {
     if (user) {
       setEmail(user.email);
-      // Récupérer le nom d'affichage depuis le profil utilisateur
+      // Fetch display name from profile
       fetchUserProfile();
     } else {
-      // Charger depuis localStorage si pas d'utilisateur
+      // Load from localStorage if no user
       loadLocalProfile();
     }
   }, [user]);
@@ -66,7 +67,7 @@ export default function AccountPage() {
   const fetchUserProfile = async () => {
     if (!currentUser) return;
 
-    // Si Supabase n'est pas configuré, utiliser les données utilisateur directement
+    // If Supabase is not configured, use current user data
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
       setDisplayName(currentUser.display_name || '');
       return;
@@ -87,7 +88,7 @@ export default function AccountPage() {
       if (data) {
         setDisplayName(data.display_name || '');
       } else if (error && error.code === 'PGRST116') {
-        // Profil n'existe pas, créer un profil vide
+        // If profile does not exist, create an empty one
         await supabase
           .from('profiles')
           .insert([{ id: currentUser.id, display_name: '' }]);
@@ -104,11 +105,11 @@ export default function AccountPage() {
       return;
     }
 
-    console.log('🔄 Début de la sauvegarde...', { displayName, currentUser });
+    console.log('🔄 Start saving...', { displayName, currentUser });
     setSaving(true);
 
     try {
-      // TOUJOURS sauvegarder localement pour que ça marche immédiatement
+      // Always save locally so it works immediately
       const userProfile = {
         id: currentUser.id,
         email: currentUser.email,
@@ -117,28 +118,28 @@ export default function AccountPage() {
       };
       
       localStorage.setItem('saave_user_profile', JSON.stringify(userProfile));
-      console.log('💾 Profil sauvegardé dans localStorage:', userProfile);
+      console.log('💾 Profile saved in localStorage:', userProfile);
       
-      // Réinitialiser les états
+      // Reset states
       setSaving(false);
       setIsEditingName(false);
-      setMessage('✅ Nom sauvegardé avec succès !');
+      setMessage('✅ Name saved successfully!');
       
-      // Mettre à jour le user dans useAuth
+      // Update user in useAuth
       window.dispatchEvent(new CustomEvent('userProfileUpdated', {
         detail: { display_name: displayName }
       }));
       
-      console.log('✅ Sauvegarde terminée avec succès');
+      console.log('✅ Save finished successfully');
       
-      // Effacer le message après 3 secondes
+      // Clear message after 3 seconds
       setTimeout(() => setMessage(''), 3000);
       
     } catch (error) {
-      console.error('❌ Erreur lors de la sauvegarde:', error);
+      console.error('❌ Error while saving:', error);
       setSaving(false);
       setIsEditingName(false);
-      setMessage('❌ Erreur lors de la sauvegarde');
+      setMessage('❌ Error while saving');
       setTimeout(() => setMessage(''), 3000);
     }
   };
@@ -149,11 +150,11 @@ export default function AccountPage() {
       return;
     }
 
-    console.log('🔄 Début de la sauvegarde email...', { email, currentUser });
+    console.log('🔄 Start email save...', { email, currentUser });
     setSaving(true);
 
     try {
-      // TOUJOURS sauvegarder localement
+      // Always save locally
       const userProfile = {
         id: currentUser.id,
         email: email,
@@ -162,22 +163,22 @@ export default function AccountPage() {
       };
       
       localStorage.setItem('saave_user_profile', JSON.stringify(userProfile));
-      console.log('💾 Email sauvegardé dans localStorage:', userProfile);
+      console.log('💾 Email saved in localStorage:', userProfile);
       
-      // Réinitialiser les états
+      // Reset states
       setSaving(false);
       setIsEditingEmail(false);
-      setMessage('✅ Email sauvegardé avec succès !');
+      setMessage('✅ Email saved successfully!');
       
-      console.log('✅ Sauvegarde email terminée avec succès');
+      console.log('✅ Email save finished successfully');
       
       setTimeout(() => setMessage(''), 3000);
       
     } catch (error) {
-      console.error('❌ Erreur lors de la sauvegarde email:', error);
+      console.error('❌ Error while saving email:', error);
       setSaving(false);
       setIsEditingEmail(false);
-      setMessage('❌ Erreur lors de la sauvegarde');
+      setMessage('❌ Error while saving');
       setTimeout(() => setMessage(''), 3000);
     }
   };
@@ -185,7 +186,7 @@ export default function AccountPage() {
   if (loading && !forceShow) {
     return (
       <div className="min-h-screen bg-[#181a1b] text-white flex items-center justify-center">
-        <div className="text-lg">Chargement...</div>
+        <div className="text-lg">Loading...</div>
       </div>
     );
   }
@@ -195,17 +196,17 @@ export default function AccountPage() {
   if (!user && !forceShow) {
     return (
       <div className="min-h-screen bg-[#181a1b] text-white flex items-center justify-center">
-        <div className="text-lg">Veuillez vous connecter</div>
+        <div className="text-lg">Please sign in</div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#181a1b] text-white flex flex-col items-center px-4 py-12">
-      <div className="w-full max-w-2xl bg-[#232526] rounded-2xl shadow-lg p-8 flex flex-col gap-8 border border-gray-700">
-        <h1 className="text-4xl font-bold mb-4">
-          Hello {displayName || currentUser.display_name || 'utilisateur'} <span className="inline-block">👋</span>
-        </h1>
+    <div className="min-h-screen bg-[#181a1b] text-white flex flex-col">
+      <AppTopBar />
+      <div className="w-full max-w-2xl mx-auto bg-[#232526] rounded-2xl shadow-lg p-8 flex flex-col gap-8 border border-gray-700 mt-8">
+        <h1 className="text-3xl font-bold mb-1">Account</h1>
+        <p className="text-gray-400">Manage your profile information.</p>
 
         {message && (
           <div className="bg-green-900/20 border border-green-700 rounded-lg p-3 text-green-300">
@@ -213,17 +214,17 @@ export default function AccountPage() {
           </div>
         )}
 
-        {/* Section Nom d'affichage */}
+        {/* Display Name */}
         <div className="bg-[#232526] rounded-xl border border-gray-700 p-6 mb-2">
-          <div className="font-semibold mb-2">Nom d&apos;affichage</div>
-          <div className="text-gray-400 mb-2 text-sm">Nom affiché dans l&apos;application.</div>
+          <div className="font-semibold mb-2">Display name</div>
+          <div className="text-gray-400 mb-2 text-sm">This name is shown in the application.</div>
           <div className="flex gap-2 items-center">
             <input
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               className="flex-1 bg-[#181a1b] border border-gray-700 rounded-lg px-4 py-2 text-white"
               disabled={!isEditingName}
-              placeholder="Entrez votre nom"
+              placeholder="Enter your name"
             />
             {isEditingName ? (
               <div className="flex gap-2">
@@ -235,18 +236,18 @@ export default function AccountPage() {
                     }
                   }}
                   disabled={saving}
-                  className="bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="bg-accent text-white px-4 py-2 rounded-lg font-semibold hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {saving ? 'Sauvegarde...' : 'Sauvegarder'}
+                  {saving ? 'Saving...' : 'Save'}
                 </button>
                 <button
                   onClick={() => {
                     setIsEditingName(false);
-                    fetchUserProfile(); // Reset aux valeurs originales
+                    fetchUserProfile(); // Reset to original values
                   }}
                   className="bg-gray-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-gray-700"
                 >
-                  Annuler
+                  Cancel
                 </button>
               </div>
             ) : (
@@ -254,16 +255,16 @@ export default function AccountPage() {
                 onClick={() => setIsEditingName(true)}
                 className="bg-accent text-white px-4 py-2 rounded-lg font-semibold hover:bg-accent/90"
               >
-                Modifier
+                Edit
               </button>
             )}
           </div>
         </div>
 
-        {/* Section Email */}
+        {/* Email */}
         <div className="bg-[#232526] rounded-xl border border-gray-700 p-6 mb-2">
           <div className="font-semibold mb-2">Email</div>
-          <div className="text-gray-400 mb-2 text-sm">Modifiez votre adresse email.</div>
+          <div className="text-gray-400 mb-2 text-sm">Update your email address.</div>
           <div className="flex gap-2 items-center">
             <input
               value={email}
@@ -276,24 +277,24 @@ export default function AccountPage() {
               <div className="flex gap-2">
                 <button
                   onClick={() => {
-                    console.log('🖱️ Bouton email cliqué, état saving:', saving);
+                    console.log('🖱️ Email save clicked, saving:', saving);
                     if (!saving) {
                       updateEmail();
                     }
                   }}
                   disabled={saving}
-                  className="bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="bg-accent text-white px-4 py-2 rounded-lg font-semibold hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {saving ? 'Sauvegarde...' : 'Sauvegarder'}
+                  {saving ? 'Saving...' : 'Save'}
                 </button>
                 <button
                   onClick={() => {
                     setIsEditingEmail(false);
-                    setEmail(currentUser.email); // Reset à la valeur originale
+                    setEmail(currentUser.email); // Reset to original value
                   }}
                   className="bg-gray-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-gray-700"
                 >
-                  Annuler
+                  Cancel
                 </button>
               </div>
             ) : (
@@ -301,20 +302,20 @@ export default function AccountPage() {
                 onClick={() => setIsEditingEmail(true)}
                 className="bg-accent text-white px-4 py-2 rounded-lg font-semibold hover:bg-accent/90"
               >
-                Modifier
+                Edit
               </button>
             )}
           </div>
         </div>
 
-        {/* Section Danger */}
+        {/* Danger Zone */}
         <div className="bg-[#2a2324] rounded-xl border border-red-900 p-6">
-          <div className="font-semibold text-red-400 mb-2">Zone dangereuse</div>
+          <div className="font-semibold text-red-400 mb-2">Danger zone</div>
           <div className="text-gray-400 mb-2 text-sm">
-            Supprimer votre compte. Après avoir cliqué sur le bouton, vous devrez confirmer la suppression via un lien envoyé à votre email.
+            Permanently delete your account. You will be asked to confirm the deletion from an email link.
           </div>
           <button className="bg-red-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-red-700 float-right">
-            Supprimer le compte
+            Delete account
           </button>
         </div>
       </div>

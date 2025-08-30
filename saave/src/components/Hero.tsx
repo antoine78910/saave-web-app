@@ -175,14 +175,11 @@ const Hero = () => {
               </div>
             </Card>
             
-            {/* Demo Video Placeholder */}
-            <Card className="p-8 bg-muted/50 aspect-video flex items-center justify-center">
-              <div className="text-center space-y-2">
-                <div className="w-16 h-16 rounded-full bg-primary/10 mx-auto flex items-center justify-center">
-                  <div className="w-0 h-0 border-l-[8px] border-l-primary border-y-[6px] border-y-transparent ml-1"></div>
-                </div>
-                <p className="text-sm text-muted-foreground">Demo Video</p>
-              </div>
+            <Card className="p-0 bg-muted/50 aspect-video overflow-hidden">
+              <video className="w-full h-full" controls autoPlay muted playsInline>
+                <source src="/landingpage.mp4" type="video/mp4" />
+                Your browser does not support the video tag.
+              </video>
             </Card>
           </div>
         </div>

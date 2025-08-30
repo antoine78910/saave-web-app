@@ -26,6 +26,36 @@ export default function AuthPage() {
   const [toasts, setToasts] = useState<ToastType[]>([]);
   const router = useRouter();
 
+  // Handle hash-based tokens (e.g., after email confirmation: /auth#access_token=...&refresh_token=...)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const hash = window.location.hash?.replace(/^#/, '');
+    if (!hash) return;
+
+    const params = new URLSearchParams(hash);
+    const access_token = params.get('access_token');
+    const refresh_token = params.get('refresh_token');
+    const type = params.get('type');
+
+    if (access_token && refresh_token) {
+      console.log('🔑 AUTH PAGE: Hash tokens detected, setting session...', { type });
+      supabase.auth
+        .setSession({ access_token, refresh_token })
+        .then(({ data, error }) => {
+          console.log('📡 AUTH PAGE: setSession result:', { hasSession: !!data.session, error });
+          if (error) {
+            console.error('❌ AUTH PAGE: setSession error:', error);
+            return;
+          }
+          // Clean the hash from URL and go to /app
+          try {
+            window.history.replaceState({}, '', '/auth');
+          } catch {}
+          router.replace('/app');
+        });
+    }
+  }, [router]);
+
   // Rediriger vers /app si déjà connecté
   useEffect(() => {
     const checkUser = async () => {
@@ -147,7 +177,7 @@ export default function AuthPage() {
     setAuthError(null);
 
     try {
-      const redirectUrl = `${window.location.origin}/auth/callback`;
+      const redirectUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? window.location.origin}/auth/callback`;
       console.log('🔗 AUTH PAGE: URL de redirection:', redirectUrl);
       
       console.log('🔧 AUTH PAGE: Configuration Supabase:', {
