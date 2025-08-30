@@ -1,0 +1,1 @@
+﻿{"version":2,"buildCommand":"cd saave && npm run build","installCommand":"cd saave && npm ci --no-audit --no-fund","outputDirectory":"saave/.next"}
