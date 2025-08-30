@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
-import puppeteer from "puppeteer";
+import chromium from "@sparticuz/chromium";
+import puppeteer from "puppeteer-core";
 import { uploadScreenshotBufferToR2 } from "../../../lib/r2";
 
 export const dynamic = "force-dynamic";
+
+export const runtime = 'nodejs'
 
 export async function POST(req) {
   const { url } = await req.json();
@@ -13,34 +16,13 @@ export async function POST(req) {
   try {
     console.log('📸 Prise de screenshot RÉEL pour:', url);
     
-    // Configuration Puppeteer pour éviter la détection par Cold Turkey
+    const executablePath = await chromium.executablePath()
     const browser = await puppeteer.launch({
-      headless: true, // Mode headless standard
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-background-timer-throttling',
-        '--disable-backgrounding-occluded-windows',
-        '--disable-renderer-backgrounding',
-        '--disable-features=TranslateUI',
-        '--disable-ipc-flooding-protection',
-        '--disable-dev-shm-usage',
-        '--no-first-run',
-        '--no-default-browser-check',
-        '--disable-background-networking',
-        '--disable-default-apps',
-        '--disable-extensions',
-        '--disable-sync',
-        '--disable-translate',
-        '--hide-scrollbars',
-        '--mute-audio',
-        '--no-zygote',
-        '--disable-gpu',
-        '--disable-web-security',
-        '--disable-features=VizDisplayCompositor'
-      ],
-      defaultViewport: null
-    });
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath,
+      headless: chromium.headless,
+    })
     
     const page = await browser.newPage();
     
@@ -94,30 +76,19 @@ export async function POST(req) {
     
     console.log('✅ Screenshot capturé en mémoire, taille:', screenshotBuffer.length, 'bytes');
     
-    // Upload DIRECTEMENT vers Cloudflare R2 (sans sauvegarde locale)
-    console.log('☁️ Upload DIRECT vers Cloudflare R2...');
-    const uploadResult = await uploadScreenshotBufferToR2(filename, screenshotBuffer);
-    
-    if (uploadResult.success) {
-      console.log('✅ Upload R2 réussi:', uploadResult.url);
-      return NextResponse.json({ 
-        success: true, 
-        filename, 
-        url: uploadResult.url, // URL Cloudflare R2
-        localUrl: `/captures/${filename}`, // URL locale en backup
-        r2Key: uploadResult.key,
-        source: 'cloudflare-r2'
-      });
-    } else {
-      console.warn('⚠️ Upload R2 échoué, utilisation URL locale:', uploadResult.error);
-      return NextResponse.json({ 
-        success: true, 
-        filename, 
-        url: `/captures/${filename}`, // Fallback vers local
-        error: uploadResult.error,
-        source: 'local-fallback'
-      });
+    // Upload vers R2 si config présente; sinon retourner un data URL pour l'affichage immédiat
+    const hasR2Config = !!(process.env.CLOUDFLARE_R2_ENDPOINT && process.env.CLOUDFLARE_R2_ACCESS_KEY_ID && process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY && process.env.CLOUDFLARE_R2_BUCKET_NAME)
+    if (hasR2Config) {
+      console.log('☁️ Upload DIRECT vers Cloudflare R2...');
+      const uploadResult = await uploadScreenshotBufferToR2(filename, screenshotBuffer);
+      if (uploadResult.success) {
+        console.log('✅ Upload R2 réussi:', uploadResult.url);
+        return NextResponse.json({ success: true, filename, url: uploadResult.url, r2Key: uploadResult.key, source: 'cloudflare-r2' });
+      }
+      console.warn('⚠️ Upload R2 échoué:', uploadResult.error)
     }
+    const dataUrl = `data:image/jpeg;base64,${Buffer.from(screenshotBuffer).toString('base64')}`
+    return NextResponse.json({ success: true, filename, url: dataUrl, source: 'data-url' })
   } catch (e) {
     console.error('❌ Erreur screenshot:', e);
     return NextResponse.json({ 

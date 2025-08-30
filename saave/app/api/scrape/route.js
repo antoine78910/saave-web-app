@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
-import puppeteer from "puppeteer";
+import chromium from "@sparticuz/chromium";
+import puppeteer from "puppeteer-core";
 
 export const dynamic = "force-dynamic";
+
+export const runtime = 'nodejs'
 
 export async function POST(req) {
   const { url } = await req.json();
@@ -11,7 +14,13 @@ export async function POST(req) {
   }
   
   try {
-    const browser = await puppeteer.launch();
+    const executablePath = await chromium.executablePath()
+    const browser = await puppeteer.launch({
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath,
+      headless: chromium.headless,
+    })
     const page = await browser.newPage();
     
     // Naviguer vers la page
