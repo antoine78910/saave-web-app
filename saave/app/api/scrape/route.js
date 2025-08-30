@@ -5,6 +5,7 @@ import puppeteer from "puppeteer-core";
 export const dynamic = "force-dynamic";
 
 export const runtime = 'nodejs'
+export const maxDuration = 60
 
 export async function POST(req) {
   const { url } = await req.json();
@@ -14,7 +15,7 @@ export async function POST(req) {
   }
   
   try {
-    const executablePath = await chromium.executablePath()
+    const executablePath = (await chromium.executablePath()) || '/usr/bin/chromium'
     const browser = await puppeteer.launch({
       args: chromium.args,
       defaultViewport: chromium.defaultViewport,
