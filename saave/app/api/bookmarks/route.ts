@@ -29,12 +29,12 @@ export async function GET(request: Request) {
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
 
-    if (!error) {
-      console.log('GET /api/bookmarks ok in', Date.now() - started, 'ms, count:', data?.length || 0)
-      return NextResponse.json(data || [], { status: 200 })
+    if (!error && Array.isArray(data) && data.length > 0) {
+      console.log('GET /api/bookmarks ok in', Date.now() - started, 'ms, count:', data.length)
+      return NextResponse.json(data, { status: 200 })
     }
 
-    console.warn('GET /api/bookmarks supabase error, falling back to R2:', error?.message)
+    console.warn('GET /api/bookmarks fallback to R2. reason:', error ? error.message : 'no rows')
     const r2 = await getJsonFromR2<any[]>(`bookmarks/${userId}.json`)
     return NextResponse.json(Array.isArray(r2) ? r2 : [], { status: 200 })
   } catch (e: any) {
@@ -74,6 +74,13 @@ export async function POST(request: Request) {
 
     if (!error && data) {
       console.log('POST /api/bookmarks ok in', Date.now() - started, 'ms id:', data?.id)
+      // Sync to R2 cache (best-effort)
+      try {
+        const r2Key = `bookmarks/${user_id}.json`
+        const list = (await getJsonFromR2<any[]>(r2Key)) || []
+        const merged = [data, ...list.filter(b => b.id !== data.id)]
+        await putJsonToR2(r2Key, merged)
+      } catch {}
       return NextResponse.json(data, { status: 200 })
     }
 
