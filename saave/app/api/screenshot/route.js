@@ -43,6 +43,7 @@ export async function POST(req) {
       deviceScaleFactor: 1,
     });
     
+    console.log('🧭 Navigating to target URL...', url)
     // Naviguer vers l'URL avec configuration plus robuste
     try {
       await page.goto(url, { 
@@ -79,6 +80,7 @@ export async function POST(req) {
     
     // Upload vers R2 si config présente; sinon retourner un data URL pour l'affichage immédiat
     const hasR2Config = !!(process.env.CLOUDFLARE_R2_ENDPOINT && process.env.CLOUDFLARE_R2_ACCESS_KEY_ID && process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY && process.env.CLOUDFLARE_R2_BUCKET_NAME)
+    console.log('🔎 R2 configured:', hasR2Config)
     if (hasR2Config) {
       console.log('☁️ Upload DIRECT vers Cloudflare R2...');
       const uploadResult = await uploadScreenshotBufferToR2(filename, screenshotBuffer);

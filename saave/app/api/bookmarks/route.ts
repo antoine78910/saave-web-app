@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
+import { getJsonFromR2, putJsonToR2 } from '@/lib/r2'
 
 export const runtime = 'nodejs'
 
@@ -28,13 +29,14 @@ export async function GET(request: Request) {
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
 
-    if (error) {
-      console.error('GET /api/bookmarks error:', error)
-      return NextResponse.json([], { status: 200 })
+    if (!error) {
+      console.log('GET /api/bookmarks ok in', Date.now() - started, 'ms, count:', data?.length || 0)
+      return NextResponse.json(data || [], { status: 200 })
     }
 
-    console.log('GET /api/bookmarks ok in', Date.now() - started, 'ms, count:', data?.length || 0)
-    return NextResponse.json(data || [], { status: 200 })
+    console.warn('GET /api/bookmarks supabase error, falling back to R2:', error?.message)
+    const r2 = await getJsonFromR2<any[]>(`bookmarks/${userId}.json`)
+    return NextResponse.json(Array.isArray(r2) ? r2 : [], { status: 200 })
   } catch (e: any) {
     console.error('GET /api/bookmarks unexpected error:', e)
     return NextResponse.json([], { status: 200 })
@@ -70,13 +72,29 @@ export async function POST(request: Request) {
       .select('*')
       .single()
 
-    if (error) {
-      console.error('POST /api/bookmarks error:', error)
-      return NextResponse.json({ error: 'db_error' }, { status: 500 })
+    if (!error && data) {
+      console.log('POST /api/bookmarks ok in', Date.now() - started, 'ms id:', data?.id)
+      return NextResponse.json(data, { status: 200 })
     }
 
-    console.log('POST /api/bookmarks ok in', Date.now() - started, 'ms id:', data?.id)
-    return NextResponse.json(data, { status: 200 })
+    console.warn('POST /api/bookmarks supabase error, falling back to R2:', error?.message)
+    // R2 JSON fallback persistence
+    const r2Key = `bookmarks/${user_id}.json`
+    const list = (await getJsonFromR2<any[]>(r2Key)) || []
+    const saved = {
+      id: Date.now().toString(),
+      url,
+      title: insertRow.title,
+      description: insertRow.description,
+      favicon: insertRow.favicon,
+      thumbnail: insertRow.thumbnail,
+      tags: insertRow.tags,
+      user_id,
+      created_at: new Date().toISOString(),
+    }
+    list.unshift(saved)
+    await putJsonToR2(r2Key, list)
+    return NextResponse.json(saved, { status: 200 })
   } catch (e: any) {
     console.error('POST /api/bookmarks unexpected:', e)
     return NextResponse.json({ error: 'invalid_json' }, { status: 400 })
@@ -99,10 +117,14 @@ export async function DELETE(request: Request) {
       .eq('id', id)
       .eq('user_id', user_id)
 
-    if (error) {
-      console.error('DELETE /api/bookmarks error:', error)
-      return NextResponse.json({ ok: false }, { status: 500 })
+    if (!error) {
+      return NextResponse.json({ ok: true }, { status: 200 })
     }
+    console.warn('DELETE /api/bookmarks supabase error, falling back to R2:', error?.message)
+    const r2Key = `bookmarks/${user_id}.json`
+    const list = (await getJsonFromR2<any[]>(r2Key)) || []
+    const next = list.filter((b: any) => b.id !== id)
+    await putJsonToR2(r2Key, next)
     return NextResponse.json({ ok: true }, { status: 200 })
   } catch (e: any) {
     console.error('DELETE /api/bookmarks unexpected:', e)
