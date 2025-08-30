@@ -1,0 +1,1 @@
+﻿{"name":"saave-web-app-root","private":true,"scripts":{"vercel-build":"cd saave && npm ci --no-audit --no-fund && npm run build"}}
