@@ -12,7 +12,9 @@ export async function GET(request: Request) {
   try {
     const cookieStore = cookies()
     const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
-    const { data: { user } } = await supabase.auth.getUser()
+    const { data: userData, error: userErr } = await supabase.auth.getUser()
+    if (userErr) console.log('GET /api/bookmarks auth.getUser error:', userErr)
+    const user = userData?.user
 
     const userId = explicitUserId || user?.id
     if (!userId) {

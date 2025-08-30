@@ -1,4 +1,5 @@
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { Readable } from 'stream';
 import { readFileSync, existsSync } from 'fs';
 import path from 'path';
 
@@ -23,6 +24,42 @@ export interface UploadResult {
   key?: string;
   error?: string;
   needsPublicUrl?: boolean;
+}
+
+export async function getJsonFromR2<T = any>(key: string): Promise<T | null> {
+  try {
+    if (!process.env.CLOUDFLARE_R2_BUCKET_NAME) return null;
+    const cmd = new GetObjectCommand({ Bucket: BUCKET_NAME, Key: key });
+    const res = await r2Client.send(cmd);
+    const stream = res.Body as Readable;
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as any));
+    }
+    const buf = Buffer.concat(chunks);
+    const text = buf.toString('utf8');
+    return JSON.parse(text) as T;
+  } catch (e) {
+    return null;
+  }
+}
+
+export async function putJsonToR2(key: string, data: any): Promise<boolean> {
+  try {
+    if (!process.env.CLOUDFLARE_R2_BUCKET_NAME) return false;
+    const body = Buffer.from(JSON.stringify(data));
+    const cmd = new PutObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: key,
+      Body: body,
+      ContentType: 'application/json',
+      CacheControl: 'no-cache',
+    });
+    await r2Client.send(cmd);
+    return true;
+  } catch (e) {
+    return false;
+  }
 }
 
 /**
