@@ -1,9 +1,0 @@
-﻿{
-  "version": 2,
-  "builds": [
-    { "src": "saave/next.config.js", "use": "@vercel/next" }
-  ],
-  "routes": [
-    { "src": "/(.*)", "dest": "saave/$1" }
-  ]
-}
