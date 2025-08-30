@@ -26,7 +26,8 @@ const Index = () => {
         if (access_token && refresh_token) {
           supabase.auth.setSession({ access_token, refresh_token }).then(() => {
             try { window.history.replaceState({}, '', '/'); } catch {}
-            router.replace('/app');
+            const base = process.env.NEXT_PUBLIC_SITE_URL || window.location.origin;
+            router.replace(`${base.endsWith('/app') ? base : base + '/app'}`);
           });
         }
       }

@@ -84,8 +84,7 @@ export async function GET(request: NextRequest) {
   }
 
   // URL to redirect to after sign in process completes
-  const isLocal = requestUrl.hostname === 'localhost' || requestUrl.hostname === '127.0.0.1';
-  const redirectBase = isLocal ? requestUrl.origin : (process.env.NEXT_PUBLIC_SITE_URL || requestUrl.origin);
+  const redirectBase = process.env.NEXT_PUBLIC_SITE_URL || requestUrl.origin;
   const finalUrl = `${redirectBase}/app`;
   
   console.log('🔄 AUTH CALLBACK: Redirection vers:', finalUrl);
