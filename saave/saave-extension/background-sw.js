@@ -523,8 +523,30 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       try { if (lastSourceTabId) { sendToastToTab(lastSourceTabId, 'success', 'Bookmark saved ✓'); } } catch {}
     }
     if (msg.type === 'saave:add-progress') {
-      showNotification('Saave', `Processing: ${msg.detail?.step || ''}`);
-      try { sendStepUpdateToPopup('started'); } catch {}
+      const step = msg.detail?.step || '';
+      showNotification('Saave', `Processing: ${step}`);
+      
+      // Envoyer la progression au popup
+      try { 
+        sendStepUpdateToPopup('started');
+        // Envoyer aussi l'événement progress avec l'étape
+        if (currentPopupPort) {
+          currentPopupPort.postMessage({
+            type: 'progress',
+            step: step
+          });
+        } else {
+          chrome.runtime.sendMessage({
+            type: 'progress',
+            step: step
+          }).catch(() => {});
+        }
+        
+        // Si on arrive à metadata (étape 2), on considère que c'est ajouté
+        if (step === 'metadata') {
+          sendSuccessToPopup();
+        }
+      } catch {}
       try { if (pendingSuccessTimer) clearTimeout(pendingSuccessTimer); } catch {}
       try { if (lastSourceTabId) { sendToastToTab(lastSourceTabId, 'success', 'Bookmark saved ✓'); } } catch {}
     }

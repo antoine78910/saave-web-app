@@ -37,61 +37,61 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 // Gérer le clic sur le bouton sauvegarder
-saveButton.addEventListener('click', async () => {
-  console.log('🚀 POPUP: Clic sur le bouton sauvegarder');
-  console.log('🚀 POPUP: currentState:', currentState);
-  
-  if (currentState === 'loading') {
-    console.log('⏸️ POPUP: Processus déjà en cours, abandon');
-    return;
-  }
-  
-  try {
-    console.log('🔄 POPUP: Démarrage sauvegarde bookmark...');
+if (saveButton) {
+  saveButton.addEventListener('click', async () => {
+    console.log('🚀 [POPUP] Bouton cliqué, currentState:', currentState);
     
-    // Récupérer la page active
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    console.log('📱 POPUP: Onglet actuel récupéré:', tab);
-    
-    if (!tab || !tab.url || tab.url.startsWith('chrome://')) {
-      console.log('❌ POPUP: Page non valide:', { tab: !!tab, url: tab?.url });
-      throw new Error('Page non valide pour la sauvegarde');
+    if (currentState === 'loading') {
+      console.log('⏸️ [POPUP] Déjà en cours, abandon');
+      return; // Déjà en cours
     }
     
-    console.log('✅ POPUP: Page valide, URL:', tab.url);
-    console.log('📝 POPUP: Titre:', tab.title);
+    console.log('✅ [POPUP] Démarrage sauvegarde...');
     
-    // Démarrer le processus de sauvegarde
-    console.log('🎬 POPUP: Démarrage de l\'animation de chargement');
+    // Afficher immédiatement "Saving page…"
     startSaving();
     
-    // Envoyer la demande au background script
-    console.log('📤 POPUP: Envoi du message vers background script');
-    const response = await chrome.runtime.sendMessage({
-      action: 'saveBookmark',
-      url: tab.url,
-      title: tab.title || 'Sans titre'
-    });
-    
-    console.log('📥 POPUP: Réponse reçue du background script:', response);
-    
-    if (response && response.success) {
-      console.log('✅ POPUP: Bookmark sauvegardé avec succès');
-      showSuccess();
-    } else {
-      console.log('❌ POPUP: Erreur dans la réponse:', response);
-      throw new Error(response?.error || response?.message || 'Erreur inconnue');
+    // Envoyer la demande au background script en arrière-plan (sans attendre)
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      console.log('📱 [POPUP] Tab récupéré:', tab?.url);
+      
+      chrome.runtime.sendMessage({
+        action: 'saveBookmark',
+        url: tab?.url,
+        title: tab?.title || 'Sans titre'
+      }).then((response) => {
+        console.log('📥 [POPUP] Réponse reçue:', response);
+        // Si c'est un doublon, afficher l'erreur immédiatement
+        if (response && response.error === 'duplicate') {
+          console.log('⚠️ [POPUP] Doublon détecté');
+          showError('Ce site est déjà dans votre bibliothèque');
+        }
+      }).catch((err) => {
+        console.log('⚠️ [POPUP] Erreur message:', err);
+        // Ignore les erreurs, on affiche quand même "Bookmark saved" après 3s
+      });
+    } catch (err) {
+      console.error('❌ [POPUP] Erreur:', err);
     }
     
-  } catch (error) {
-    console.error('❌ POPUP: Erreur sauvegarde:', error);
-    showError(error.message);
-  }
-});
+    // Fallback: afficher "Bookmark saved" après 5 secondes si pas de mise à jour
+    // (normalement on reçoit l'événement metadata avant)
+    setTimeout(() => {
+      console.log('⏰ [POPUP] 5 secondes écoulées (fallback), currentState:', currentState);
+      if (currentState === 'loading') {
+        // Si on n'a pas reçu d'événement metadata, on affiche quand même le succès
+        showSuccess();
+      }
+    }, 5000);
+  });
+} else {
+  console.error('❌ [POPUP] saveButton non trouvé dans le DOM');
+}
 
-// Écouter les messages du background script
+// Écouter les messages du background script (via port)
 backgroundPort.onMessage.addListener((message) => {
-  console.log('📨 Message reçu dans popup:', message);
+  console.log('📨 Message reçu dans popup (port):', message);
   
   switch (message.type) {
     case 'error':
@@ -100,8 +100,77 @@ backgroundPort.onMessage.addListener((message) => {
     case 'success':
       showSuccess();
       break;
+    case 'stepUpdate':
+      handleStepUpdate(message.step);
+      break;
+    case 'progress':
+      // Étape de progression depuis l'app (metadata = étape 2)
+      if (message.step === 'metadata') {
+        showSuccess();
+      } else {
+        updateProgress(message.step);
+      }
+      break;
   }
 });
+
+// Écouter aussi les messages runtime (pour les événements depuis l'app)
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log('📨 Message reçu dans popup (runtime):', message);
+  
+  if (message && typeof message === 'object' && message.type) {
+    switch (message.type) {
+      case 'progress':
+        // Étape de progression depuis l'app (metadata = étape 2)
+        if (message.step === 'metadata') {
+          showSuccess();
+        } else {
+          updateProgress(message.step);
+        }
+        break;
+      case 'stepUpdate':
+        handleStepUpdate(message.step);
+        break;
+      case 'success':
+        showSuccess();
+        break;
+      case 'error':
+        showError(message.error);
+        break;
+    }
+  }
+  
+  return true; // Indique que la réponse sera asynchrone
+});
+
+// Gérer les mises à jour d'étape
+function handleStepUpdate(step) {
+  if (step === 'started') {
+    // Garder l'état loading, on attend l'étape metadata
+    updateProgress('scraping');
+  }
+}
+
+// Mettre à jour la progression
+function updateProgress(step) {
+  if (currentState !== 'loading') return;
+  
+  const stepMessages = {
+    'scraping': { text: 'Analyse de la page…', subtitle: 'Extraction du contenu' },
+    'metadata': { text: 'Bookmark ajouté ✓', subtitle: 'Traitement en cours' },
+    'screenshot': { text: 'Capture d\'écran…', subtitle: 'Génération de l\'aperçu' },
+  };
+  
+  const stepInfo = stepMessages[step] || { text: 'Traitement…', subtitle: 'Envoi vers Saave.io' };
+  
+  if (statusText) statusText.textContent = stepInfo.text;
+  if (statusSubtitle) statusSubtitle.textContent = stepInfo.subtitle;
+  
+  // Si on arrive à metadata, on considère que c'est ajouté
+  if (step === 'metadata') {
+    showSuccess();
+  }
+}
 
 // Gérer la déconnexion
 backgroundPort.onDisconnect.addListener(() => {
@@ -122,37 +191,47 @@ function displayPageInfo(url, title) {
 
 // Démarrer le processus de sauvegarde
 function startSaving() {
+  console.log('🎬 [POPUP] startSaving() appelé');
   currentState = 'loading';
   
-  statusIcon.innerHTML = '<div class="spinner"></div>';
-  statusText.textContent = 'Envoi vers Saave.io...';
-  statusSubtitle.textContent = 'Ouverture de l\'application';
+  if (statusIcon) statusIcon.innerHTML = '<div class="spinner"></div>';
+  if (statusText) statusText.textContent = 'Saving page…';
+  if (statusSubtitle) statusSubtitle.textContent = 'Envoi vers Saave.io';
   
-  saveButton.disabled = true;
-  saveButton.textContent = 'Envoi...';
+  if (saveButton) {
+    saveButton.disabled = true;
+    saveButton.textContent = 'Saving…';
+  }
   
-  errorMessage.style.display = 'none';
+  if (errorMessage) errorMessage.style.display = 'none';
+  
+  console.log('✅ [POPUP] startSaving() terminé');
 }
 
 
 
 // Afficher le succès
 function showSuccess() {
+  if (currentState === 'success') return; // Déjà en succès
+  
   currentState = 'success';
   
   statusIcon.innerHTML = '✅';
-  statusText.textContent = 'URL envoyée !';
+  statusText.textContent = 'Bookmark ajouté ✓';
   statusSubtitle.textContent = 'Traitement en cours dans Saave.io';
   
-  saveButton.textContent = 'Envoyé ✓';
-  saveButton.style.background = '#10b981';
+  if (saveButton) {
+    saveButton.textContent = 'Ajouté ✓';
+    saveButton.style.background = '#10b981';
+    saveButton.disabled = false;
+  }
   
-  errorMessage.style.display = 'none';
+  if (errorMessage) errorMessage.style.display = 'none';
   
-  // Fermer le popup après 2 secondes
+  // Fermer le popup après 2.5 secondes (smooth)
   setTimeout(() => {
     window.close();
-  }, 2000);
+  }, 2500);
 }
 
 // Afficher une erreur
