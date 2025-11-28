@@ -216,28 +216,33 @@ export async function POST(request: Request) {
 			}
 			try {
 				const controller = new AbortController()
-				const to = setTimeout(() => controller.abort(), Number(process.env.METADATA_TIMEOUT_MS || 12000))
+				const to = setTimeout(() => controller.abort(), Number(process.env.METADATA_TIMEOUT_MS || 15000))
 				const endpoint = `${origin}/api/extract-metadata`
+				// Pass both URL and scraped content for better description extraction
 				const res = await fetch(endpoint, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ url: canonicalUrl, content }),
+					body: JSON.stringify({ url: canonicalUrl, content: content || '' }),
 					signal: controller.signal,
 				} as RequestInit)
 				clearTimeout(to)
 				if (res.ok) {
 					const data = await res.json()
 					title = data?.title || domain
-					description = data?.description || ''
+					// Only use description if it's meaningful (at least 20 chars)
+					description = (data?.description && data.description.trim().length >= 20) ? data.description.trim() : description || ''
 					favicon = data?.favicon || null
 					tags = Array.isArray(data?.tags) ? data.tags : []
+					console.log('✅ Metadata extracted:', { title: title.substring(0, 50), descriptionLength: description.length, tagsCount: tags.length })
 					await append(userId, { ...seed, processingStep: 'metadata', status: 'loading', title, description, favicon, tags })
 				} else {
+					console.warn('⚠️ Metadata extraction failed:', res.status)
 					title = domain
 					description = description || ''
 					await append(userId, { ...seed, processingStep: 'metadata', status: 'loading', title, description, favicon, tags })
 				}
 			} catch (e: any) {
+				console.warn('⚠️ Metadata extraction error:', e?.message)
 				title = domain
 				description = description || ''
 				await append(userId, { ...seed, processingStep: 'metadata', status: 'loading', title, description, favicon, tags })

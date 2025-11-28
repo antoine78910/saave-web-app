@@ -10,20 +10,9 @@ if (process.env.OPENAI_API_KEY) {
 }
 
 export async function POST(request: Request) {
-  // Handle CORS preflight requests
-  if (request.method === 'OPTIONS') {
-    return new NextResponse(null, {
-      status: 200,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-      },
-    });
-  }
-
   try {
-    const { url } = await request.json();
+    const started = Date.now();
+    const { url, content } = await request.json();
 
     if (!url) {
       return NextResponse.json(
@@ -39,28 +28,29 @@ export async function POST(request: Request) {
       );
     }
 
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-      },
-    });
-
-    if (!response.ok) {
-      return NextResponse.json(
-        { error: `Failed to fetch URL: ${response.statusText}` },
-        { 
-          status: 500,
-          headers: {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-          }
-        }
-      );
+    const REQUEST_TIMEOUT_MS = Number(process.env.METADATA_TIMEOUT_MS || 8000);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    let html = '';
+    let $ = load('');
+    try {
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+        signal: controller.signal,
+      });
+      if (response.ok) {
+        html = await response.text();
+        $ = load(html);
+      } else {
+        console.warn('extract-metadata: non-OK response', response.status, response.statusText);
+      }
+    } catch (err) {
+      console.warn('extract-metadata: fetch failed/timeout:', (err as any)?.message);
+    } finally {
+      clearTimeout(timeout);
     }
-
-    const html = await response.text();
-    const $ = load(html);
 
     // --- Basic Metadata Extraction ---
     const title = $('meta[property="og:title"]').attr('content') || $('title').text() || $('h1').first().text() || '';
@@ -69,14 +59,87 @@ export async function POST(request: Request) {
     const domain = new URL(url).hostname.replace('www.', '');
     const ogImage = $('meta[property="og:image"]').attr('content') || '';
 
-    // If description is missing, construct one from the main content
-    if (!description) {
-      const mainContent = $('article, .content, .main, main, #main, #content').first().text().trim();
-      if (mainContent) {
-        description = mainContent.substring(0, 2000).replace(/\s\s+/g, ' ');
-      } else {
-        description = $('body').text().trim().substring(0, 2000).replace(/\s\s+/g, ' ');
+    // If description is missing, try multiple strategies to extract it
+    if (!description || description.trim().length < 20) {
+      // Strategy 1: Try to find paragraph text near the h1 or title
+      const h1Element = $('h1').first();
+      if (h1Element.length) {
+        const nextParagraph = h1Element.nextAll('p').first().text().trim();
+        if (nextParagraph && nextParagraph.length > 20) {
+          description = nextParagraph.substring(0, 500);
+        }
       }
+
+      // Strategy 2: Look for common description containers
+      if (!description || description.length < 20) {
+        const descriptionSelectors = [
+          'meta[name="twitter:description"]',
+          '.description',
+          '.subtitle',
+          '.lead',
+          '.intro',
+          '[class*="description"]',
+          '[class*="intro"]',
+          '[class*="summary"]',
+          'p.lead',
+          'p.intro',
+        ];
+        
+        for (const selector of descriptionSelectors) {
+          const found = $(selector).first().text().trim();
+          if (found && found.length > 20) {
+            description = found.substring(0, 500);
+            break;
+          }
+        }
+      }
+
+      // Strategy 3: Extract from main content areas
+      if (!description || description.length < 20) {
+        const mainContent = $('article, .content, .main, main, #main, #content, section').first().text().trim();
+        if (mainContent && mainContent.length > 50) {
+          // Take first meaningful paragraph (at least 50 chars)
+          const paragraphs = mainContent.split(/\n\n|\r\n\r\n/).filter(p => p.trim().length > 50);
+          if (paragraphs.length > 0) {
+            description = paragraphs[0].substring(0, 500).replace(/\s\s+/g, ' ').trim();
+          }
+        }
+      }
+
+      // Strategy 4: Use scraped content if available
+      if ((!description || description.length < 20) && content && typeof content === 'string' && content.length > 50) {
+        // Clean and extract meaningful text from scraped content
+        const cleanedContent = content.replace(/\s\s+/g, ' ').trim();
+        const sentences = cleanedContent.split(/[.!?]+/).filter(s => s.trim().length > 30);
+        if (sentences.length > 0) {
+          // Take first 2-3 sentences
+          description = sentences.slice(0, 3).join('. ').substring(0, 500).trim();
+          if (!description.endsWith('.')) description += '.';
+        }
+      }
+
+      // Strategy 5: Fallback to body text (last resort)
+      if (!description || description.length < 20) {
+        const bodyText = $('body').text().trim();
+        if (bodyText && bodyText.length > 50) {
+          // Remove common noise (navigation, footer, etc.)
+          $('nav, footer, header, script, style, .nav, .footer, .header').remove();
+          const cleanBody = $('body').text().trim();
+          const firstParagraph = cleanBody.split(/\n\n|\r\n\r\n/).find(p => p.trim().length > 50);
+          if (firstParagraph) {
+            description = firstParagraph.substring(0, 500).replace(/\s\s+/g, ' ').trim();
+          }
+        }
+      }
+    }
+
+    // Clean up description
+    if (description) {
+      description = description
+        .replace(/\s\s+/g, ' ')
+        .replace(/\n+/g, ' ')
+        .trim()
+        .substring(0, 1000); // Limit to 1000 chars
     }
 
     // --- AI-Powered Tag Generation or Fallback ---
@@ -86,8 +149,15 @@ export async function POST(request: Request) {
     if (openai) {
       try {
         const textContentForAI = `URL: ${url}\nTitle: ${title}\nH1: ${h1}\nDescription: ${description.substring(0, 4000)}`;
+        const AI_TIMEOUT_MS = Number(process.env.METADATA_AI_TIMEOUT_MS || 5000);
+        const withTimeout = <T>(p: Promise<T>) => {
+          return new Promise<T>((resolve, reject) => {
+            const to = setTimeout(() => reject(new Error('openai_timeout')), AI_TIMEOUT_MS);
+            p.then(v => { clearTimeout(to); resolve(v); }).catch(e => { clearTimeout(to); reject(e); });
+          });
+        };
 
-        const completion = await openai.chat.completions.create({
+        const completion = await withTimeout(openai.chat.completions.create({
           model: "gpt-3.5-turbo",
           messages: [
             {
@@ -102,7 +172,7 @@ export async function POST(request: Request) {
           response_format: { type: "json_object" },
           temperature: 0.5,
           max_tokens: 300,
-        });
+        }));
 
         const result = JSON.parse(completion.choices[0].message.content || '{}');
         if (result.tags && Array.isArray(result.tags)) {
@@ -110,7 +180,7 @@ export async function POST(request: Request) {
         }
 
       } catch (aiError) {
-        console.error('AI generation failed:', aiError);
+        console.warn('AI generation failed/timeout:', (aiError as any)?.message);
       }
     }
     
@@ -137,11 +207,10 @@ export async function POST(request: Request) {
     // --- Final Response ---
     const finalTags = [...new Set(aiTags)].filter(Boolean).slice(0, 15);
 
-    console.log('AI-enhanced metadata extraction complete:', {
+    console.log('extract-metadata done in', Date.now() - started, 'ms', {
       title: title?.substring(0, 50) + '...',
       descriptionLength: description.length,
-      tags: finalTags,
-      favicon,
+      tagsCount: finalTags.length,
     });
 
     return NextResponse.json(
@@ -163,18 +232,39 @@ export async function POST(request: Request) {
     );
 
   } catch (error) {
-    console.error('Error extracting metadata:', error);
-    return NextResponse.json(
-      { error: 'Failed to extract metadata' },
-      { 
-        status: 500,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    console.warn('extract-metadata unexpected error, returning fallback:', (error as any)?.message);
+    try {
+      const { url } = await request.json();
+      const domain = url ? new URL(url).hostname.replace('www.', '') : 'unknown';
+      return NextResponse.json(
+        {
+          title: domain,
+          description: '',
+          tags: [domain],
+          ogImage: '',
+          favicon: `https://www.google.com/s2/favicons?domain=${domain}&sz=64`,
+          url,
+        },
+        {
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+          }
         }
-      }
-    );
+      );
+    } catch {
+      return NextResponse.json(
+        { title: 'Untitled', description: '', tags: [], ogImage: '', favicon: '', url: '' },
+        {
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+          }
+        }
+      );
+    }
   }
 }
 
