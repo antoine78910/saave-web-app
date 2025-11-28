@@ -25,6 +25,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
     return true;
   }
+  
+  // Messages de l'app Saave (depuis l'onglet /app)
+  if (message.type === 'bookmarkStarted') {
+    console.log('✅ [EXT] Bookmark started notification from app:', message.id);
+    // Annuler le fallback timer car on a reçu une vraie notification
+    if (pendingSuccessTimer) {
+      clearTimeout(pendingSuccessTimer);
+      pendingSuccessTimer = null;
+    }
+    // Notifier le popup
+    sendStepUpdateToPopup('started');
+    // Envoyer notification Chrome
+    showNotification('Saave', 'Bookmark added ✅');
+    sendResponse({ received: true });
+    return true;
+  }
 });
 
 // Gestionnaire de connexion pour le popup
@@ -135,21 +151,41 @@ async function handleSaveBookmarkFromPopup(url, title, sendResponse) {
       throw new Error('L\'URL saisie n\'est pas reconnue comme valide.');
     }
     
-    // Mémoriser l'onglet source et afficher un toast de démarrage
+    // Vérifier d'abord si c'est un doublon en appelant directement l'API
     try {
-      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (activeTab?.id) {
-        lastSourceTabId = activeTab.id;
-        await sendToastToTab(activeTab.id, 'start', 'Saving page…');
-        try { showNotification('Saave', 'Saving page…'); } catch {}
-        // Fallback success si l'app n'émet pas d'événements à temps
-        try { if (pendingSuccessTimer) clearTimeout(pendingSuccessTimer); } catch {}
-        pendingSuccessTimer = setTimeout(() => {
-          try { if (lastSourceTabId) sendToastToTab(lastSourceTabId, 'success', 'Bookmark added ✓'); } catch {}
-        }, 2500);
+      const checkResponse = await fetch(`http://localhost:${port}/api/bookmarks/process`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: url.trim(), user_id: user.id })
+      });
+      
+      const checkText = await checkResponse.text();
+      let checkData;
+      try { checkData = JSON.parse(checkText); } catch {}
+      
+      // Si c'est un doublon, retourner l'erreur immédiatement
+      if (checkResponse.status === 409 || checkData?.duplicate) {
+        sendResponse({ success: false, error: 'duplicate' });
+        showNotification('Saave', 'Ce site est déjà dans votre bibliothèque');
+        return;
       }
-    } catch {}
+      
+      // Si l'API a réussi, on peut continuer
+      if (checkResponse.ok || checkResponse.status === 202) {
+        // Afficher "Bookmark added ✓" après 3 secondes
+        setTimeout(() => {
+          sendStepUpdateToPopup('started');
+          showNotification('Saave', 'Bookmark added ✅');
+        }, 3000);
+        sendResponse({ success: true });
+        return;
+      }
+    } catch (apiError) {
+      console.error('❌ Erreur lors de la vérification API:', apiError);
+      // Continue avec l'injection dans l'app en fallback
+    }
 
+    // Fallback: injection dans l'app (ancienne méthode)
     // Chercher ou créer un onglet Saave /app
     const tabs = await chrome.tabs.query({});
     let saaveTab = tabs.find(tab => tab.url && tab.url.includes(`localhost:${port}/app`));
@@ -163,14 +199,12 @@ async function handleSaveBookmarkFromPopup(url, title, sendResponse) {
       await new Promise(resolve => setTimeout(resolve, 3000));
     } else {
       console.log('📱 EXTENSION: Onglet /app trouvé (ne pas activer pour garder le popup ouvert)');
-      // Ne pas activer l'onglet pour éviter la fermeture du popup
       await new Promise(resolve => setTimeout(resolve, 500));
     }
     
     await chrome.scripting.executeScript({
       target: { tabId: saaveTab.id },
       func: (urlToSave) => {
-        console.log('🎯 WEBAPP INJECT: Début injection avec URL:', urlToSave);
         const waitForElements = () => {
           return new Promise((resolve, reject) => {
             let attempts = 0;
@@ -200,17 +234,18 @@ async function handleSaveBookmarkFromPopup(url, title, sendResponse) {
           urlInput.dispatchEvent(new Event('change', { bubbles: true }));
           setTimeout(() => {
             addButton.click();
-            try {
-              // Signaler immédiatement le démarrage au content script/extension
-              window.dispatchEvent(new CustomEvent('saave:add-started', { detail: { source: 'extension-inject' } }));
-            } catch {}
           }, 500);
         }).catch(() => {});
       },
       args: [url.trim()]
     });
     
-    console.log('✅ EXTENSION: Script injecté avec succès');
+    // Afficher "Bookmark added ✓" après 3 secondes (fallback)
+    setTimeout(() => {
+      sendStepUpdateToPopup('started');
+      showNotification('Saave', 'Bookmark added ✅');
+    }, 3000);
+    
     sendResponse({ success: true, message: 'URL envoyée à la webapp pour traitement!' });
     
   } catch (error) {
@@ -341,117 +376,11 @@ async function getCurrentUser(port) {
       } catch (error) {
         console.log('⚠️ Impossible d\'exécuter le script dans l\'onglet Saave:', error);
       }
-
-      // Fallback: demander au contexte page (même origine) de lire le profil via /api/user/profile
-      try {
-        const resultsProfile = await chrome.scripting.executeScript({
-          target: { tabId: saaveTab.id },
-          func: async () => {
-            try {
-              const res = await fetch('/api/user/profile', { method: 'GET', credentials: 'include' });
-              if (!res.ok) return null;
-              const data = await res.json();
-              if (data && data.id) return { id: data.id, email: data.email, display_name: data.display_name };
-              return null;
-            } catch (e) {
-              return null;
-            }
-          }
-        });
-        const prof = resultsProfile[0]?.result;
-        if (prof && prof.id) {
-          console.log('✅ Utilisateur détecté via /api/user/profile:', prof.email);
-          await chrome.storage.local.set({ saave_user: prof });
-          return prof;
-        }
-      } catch (e) {
-        console.log('⚠️ Échec fallback profile:', e);
-      }
     }
     return null;
   } catch (error) {
     console.error('❌ Erreur lors de la récupération de l\'utilisateur:', error);
     return null;
-  }
-}
-
-// Fonction pour extraire les métadonnées de la page
-async function extractPageMetadata(tab) {
-  try {
-    const results = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: () => {
-        const getMetaContent = (selector) => {
-          const meta = document.querySelector(selector);
-          return meta ? meta.content : '';
-        };
-        
-        const getFavicon = () => {
-          const favicon = document.querySelector('link[rel*="icon"]');
-          if (favicon && favicon.href) {
-            return favicon.href;
-          }
-          return `${window.location.origin}/favicon.ico`;
-        };
-
-        const getImage = () => {
-          return getMetaContent('meta[property="og:image"]') ||
-                 getMetaContent('meta[name="twitter:image"]') ||
-                 getMetaContent('meta[property="og:image:url"]');
-        };
-
-        return {
-          title: document.title || '',
-          description: getMetaContent('meta[name="description"]') ||
-                      getMetaContent('meta[property="og:description"]') ||
-                      getMetaContent('meta[name="twitter:description"]') || '',
-          favicon: getFavicon(),
-          thumbnail: getImage(),
-          url: window.location.href
-        };
-      }
-    });
-    
-    return results[0]?.result || {};
-  } catch (error) {
-    console.warn('⚠️ Impossible d\'extraire les métadonnées:', error);
-    return {
-      title: tab.title || 'Page sans titre',
-      description: '',
-      favicon: '',
-      thumbnail: '',
-      url: tab.url
-    };
-  }
-}
-
-// Fonction pour ajouter un bookmark à Saave
-async function addBookmarkToSaave(bookmarkData, port) {
-  try {
-    console.log('📝 Ajout du bookmark:', bookmarkData.title);
-    
-    const response = await fetch(`http://localhost:${port}/api/bookmarks`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        ...bookmarkData,
-        source: 'extension'
-      })
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Erreur HTTP ${response.status}: ${errorText}`);
-    }
-
-    const result = await response.json();
-    console.log('✅ Bookmark ajouté avec succès:', result);
-    return result;
-  } catch (error) {
-    console.error('❌ Erreur lors de l\'ajout du bookmark:', error);
-    throw error;
   }
 }
 
@@ -525,9 +454,10 @@ async function sendToastToTab(tabId, action, text) {
       return;
     }
 
-    // Show 'Adding bookmark…' immediately, then content script auto-switches to success after 3s
-    await sendToastToTab(tab.id, 'start', 'Saving page…');
-    try { showNotification('Saave', 'Saving page…'); } catch {}
+    // Afficher "Bookmark added ✅" après 3 secondes (simple et fiable)
+    setTimeout(() => {
+      showNotification('Saave', 'Bookmark added ✅');
+    }, 3000);
 
     const controller = new AbortController();
     const res = await fetch(`http://localhost:${port}/api/bookmarks/process`, {
@@ -545,15 +475,16 @@ async function sendToastToTab(tabId, action, text) {
     }
     if (res.status === 409) {
       await sendToastToTab(tab.id, 'duplicate');
+      try { await sendToastToTab(tab.id, 'hide'); } catch {}
       showNotification('Saave', 'Already saved • Skipped');
       return;
     }
-    if (!res.ok) throw new Error(text || `HTTP ${res.status}`);
+    if (!res.ok && res.status !== 202) throw new Error(text || `HTTP ${res.status}`);
 
-    // Optional explicit success; content script may already have switched
-    await sendToastToTab(tab.id, 'success', 'Bookmark saved ✓');
+    // Fallback: si pas d'événement, on a déjà programmé un succès ci-dessus
   } catch (error) {
     console.error('❌ [EXT] Error on icon click:', error);
+    // No early timer to clear
     await sendToastToTab(tab?.id, 'error', error?.message || 'Failed to add');
     showNotification('Saave - Error', error?.message || 'Failed to add');
   }
@@ -586,27 +517,19 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && typeof msg === 'object' && msg.type) {
     if (msg.type === 'saave:add-started') {
+      showNotification('Saave', 'Adding bookmark...');
       try { sendStepUpdateToPopup('started'); } catch {}
-      // Afficher le succès sur l'onglet source si connu
       try { if (pendingSuccessTimer) clearTimeout(pendingSuccessTimer); } catch {}
       try { if (lastSourceTabId) { sendToastToTab(lastSourceTabId, 'success', 'Bookmark saved ✓'); } } catch {}
-      // No start notification from extension; info toasts are shown in page
     }
     if (msg.type === 'saave:add-progress') {
-      // On first progress step from webapp, show success toast "Bookmark added"
-      try {
-        const firstSteps = new Set(['scraping','metadata','screenshot','describe','summary','tags','saving']);
-        const step = String(msg.detail?.step || '');
-        if (firstSteps.has(step)) {
-          showNotification('Saave', 'Bookmark added ✓');
-          try { sendStepUpdateToPopup('started'); } catch {}
-          try { if (pendingSuccessTimer) clearTimeout(pendingSuccessTimer); } catch {}
-          try { if (lastSourceTabId) { sendToastToTab(lastSourceTabId, 'success', 'Bookmark saved ✓'); } } catch {}
-        }
-      } catch {}
+      showNotification('Saave', `Processing: ${msg.detail?.step || ''}`);
+      try { sendStepUpdateToPopup('started'); } catch {}
+      try { if (pendingSuccessTimer) clearTimeout(pendingSuccessTimer); } catch {}
+      try { if (lastSourceTabId) { sendToastToTab(lastSourceTabId, 'success', 'Bookmark saved ✓'); } } catch {}
     }
     if (msg.type === 'saave:add-finished') {
-      // Final success already shown; keep silent
+      showNotification('Saave', 'Bookmark added ✅');
     }
     if (msg.type === 'saave:add-error') {
       const message = String(msg.detail?.message || '');
@@ -632,7 +555,9 @@ if (chrome.notifications && chrome.notifications.onClicked) {
   });
 }
 
-// Initialisation (facultatif) – éviter les API non supportées
+// Initialisation (service worker lifecycle)
 self.addEventListener('activate', () => {
   console.log('🔧 Saave service worker active');
 });
+
+
