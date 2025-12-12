@@ -8,7 +8,114 @@ let currentPopupPort = null;
 let lastSourceTabId = null;
 // Fallback: succès si aucun événement n'arrive à temps
 let pendingSuccessTimer = null;
-// No separate windows, stick to Chrome notifications only
+// Anti double-click + cancel polling
+let savingLockUntil = 0;
+let cancelRequested = false;
+let activeSaveUrl = null;
+
+// Handle extension icon click - show notification and save bookmark
+chrome.action.onClicked.addListener(async (tab) => {
+  console.log('🎯🎯🎯 EXTENSION ICON CLICKED 🎯🎯🎯');
+  console.log('Tab ID:', tab.id);
+  console.log('Tab URL:', tab.url);
+  console.log('Tab Title:', tab.title);
+  console.log('⏰ Timestamp:', new Date().toISOString());
+
+  // Store the tab info for saving
+  lastSourceTabId = tab.id;
+  activeSaveUrl = tab.url || null;
+  cancelRequested = false;
+
+  // Helper to show toast in content script (inject if needed)
+  const sendNotification = async (action, text) => {
+    try {
+      await chrome.tabs.sendMessage(tab.id, {
+        type: 'saave:toast',
+        action: action,
+        text: text
+      });
+      return true;
+    } catch (err) {
+      // Content script not loaded, inject it first
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          files: ['content.js']
+        });
+        await chrome.scripting.insertCSS({
+          target: { tabId: tab.id },
+          files: ['content.css']
+        });
+        // Wait a bit for the script to initialize
+        await new Promise(resolve => setTimeout(resolve, 50));
+        await chrome.tabs.sendMessage(tab.id, {
+          type: 'saave:toast',
+          action: action,
+          text: text
+        });
+        return true;
+      } catch (injectErr) {
+        console.error('❌ Failed to inject and send notification:', injectErr);
+        return false;
+      }
+    }
+  };
+
+  // 0) Toujours afficher "Saving page..." immédiatement (avant tout réseau)
+  await sendNotification('start', 'Saving page...');
+
+  // Fallback UX: si aucune erreur après 2.5s, afficher "Bookmark added" (sans attendre les checks)
+  try { if (pendingSuccessTimer) clearTimeout(pendingSuccessTimer); } catch {}
+  pendingSuccessTimer = setTimeout(async () => {
+    if (cancelRequested) return;
+    console.log('⏳ EXTENSION: Fallback success (no error after 2.5s) -> Bookmark added');
+    try { await sendNotification('success', 'Bookmark added'); } catch {}
+    try { showNotification('Saave', 'Bookmark added ✓'); } catch {}
+  }, 2500);
+
+  // Anti double-click: if user clicks multiple times, keep showing loader but don't restart
+  const now = Date.now();
+  if (now < savingLockUntil) {
+    console.log('⛔ EXTENSION: Click ignored (saving lock active)');
+    return;
+  }
+  savingLockUntil = now + 2500; // 2.5s lock window
+
+  // Trigger bookmark save
+  console.log('💾 Starting bookmark save...');
+  handleSaveBookmarkFromPopup(tab.url, tab.title, async (response) => {
+    console.log('📥📥📥 SAVE RESPONSE RECEIVED 📥📥📥');
+    console.log('Response:', JSON.stringify(response, null, 2));
+
+    // Show error notification ONLY (success is handled by step1 detection watch)
+    if (response && response.error) {
+      console.log('❌ Error detected:', response.error);
+      if (pendingSuccessTimer) {
+        try { clearTimeout(pendingSuccessTimer); } catch {}
+        pendingSuccessTimer = null;
+      }
+      if (response.error === 'duplicate') {
+        console.log('📤 Sending DUPLICATE notification...');
+        await sendNotification('duplicate', 'Already saved');
+      } else {
+        console.log('📤 Sending ERROR notification...');
+        await sendNotification('error', response.error);
+      }
+    } else if (response && response.started) {
+      console.log('⏳ Process started, waiting for completion...');
+      console.log('⏳ SUCCESS will be shown when step1 is detected in /api/bookmarks');
+      // Ne rien faire ici - le succès sera affiché par waitForBookmarkAddedStep1
+    } else {
+      // Ancien comportement pour fallback
+      console.log('✅ Success! Sending SUCCESS notification...');
+      if (pendingSuccessTimer) {
+        try { clearTimeout(pendingSuccessTimer); } catch {}
+        pendingSuccessTimer = null;
+      }
+      await sendNotification('success', 'Bookmark saved!');
+    }
+  });
+});
 
 // Gestionnaire de messages du popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -37,7 +144,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Notifier le popup
     sendStepUpdateToPopup('started');
     // Envoyer notification Chrome
-    showNotification('Saave', 'Bookmark added ✅');
+    showNotification('Saave', 'Bookmark saved ✅');
+    sendResponse({ received: true });
+    return true;
+  }
+
+  // Cancel signal relayed from webapp (BookmarkCard dispatches saave:add-error with message 'cancelled')
+  if (message.type === 'saave:add-error' && (message.detail?.message === 'cancelled' || message.detail?.error === 'cancelled')) {
+    console.log('🛑 EXTENSION: Cancel received from app, stopping polling and hiding notification');
+    cancelRequested = true;
+    // Stop any pending fallback success
+    if (pendingSuccessTimer) {
+      try { clearTimeout(pendingSuccessTimer); } catch {}
+      pendingSuccessTimer = null;
+    }
+    if (lastSourceTabId) {
+      try {
+        // NOTE: onMessage listener is not async; don't use await here.
+        sendToastToTab(lastSourceTabId, 'error', 'Bookmark cancelled')
+          .then((ok) => console.log('📤 EXTENSION: sent cancel toast =>', ok))
+          .catch(() => {});
+      } catch {}
+    }
+    try { if (currentPopupPort) currentPopupPort.postMessage({ type: 'error', error: 'cancelled' }); } catch {}
+    try { showNotification('Saave', 'Bookmark cancelled'); } catch {}
     sendResponse({ received: true });
     return true;
   }
@@ -122,6 +252,16 @@ async function handleSaveBookmarkFromPopup(url, title, sendResponse) {
   try {
     console.log('🚀 EXTENSION: Début handleSaveBookmarkFromPopup avec URL:', url);
     console.log('🚀 EXTENSION: Title:', title);
+    console.log('⏳ EXTENSION: status=Saving page… (spinner visible)');
+
+    // NOTE: le toast "Saving page..." est envoyé dès le clic (onClicked). Ne pas le renvoyer ici.
+    try {
+      if (currentPopupPort) {
+        currentPopupPort.postMessage({ type: 'progress', step: 'scraping' });
+      } else {
+        chrome.runtime.sendMessage({ type: 'progress', step: 'scraping' }).catch(() => {});
+      }
+    } catch {}
     
     // Trouver le port Saave actif
     const port = await findActiveSaavePort();
@@ -150,38 +290,113 @@ async function handleSaveBookmarkFromPopup(url, title, sendResponse) {
     } catch {
       throw new Error('L\'URL saisie n\'est pas reconnue comme valide.');
     }
-    
-    // Vérifier d'abord si c'est un doublon en appelant directement l'API
+
+    // 1. Obtenir le nombre de bookmarks AVANT de lancer le process
+    console.log('📊 EXTENSION: Getting current bookmark count...');
+    const initialCount = await getBookmarkCount(port, user.id);
+    console.log(`📊 EXTENSION: Initial bookmark count: ${initialCount}`);
+
+    // NOTE: le "Saving page..." est déjà envoyé immédiatement depuis onClicked()
+
+    // Vérifier (et lancer) le process via l'API, puis suivre la progression
     try {
-      const checkResponse = await fetch(`http://localhost:${port}/api/bookmarks/process`, {
+      const processResponse = await fetch(`http://localhost:${port}/api/bookmarks/process`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: url.trim(), user_id: user.id })
+        body: JSON.stringify({ url: url.trim(), user_id: user.id, source: 'extension' })
       });
-      
-      const checkText = await checkResponse.text();
-      let checkData;
-      try { checkData = JSON.parse(checkText); } catch {}
-      
+
+      const processText = await processResponse.text();
+      let processData;
+      try { processData = JSON.parse(processText); } catch {}
+
       // Si c'est un doublon, retourner l'erreur immédiatement
-      if (checkResponse.status === 409 || checkData?.duplicate) {
+      if (processResponse.status === 409 || processData?.duplicate) {
+        console.log('⚠️ EXTENSION: Duplicate detected (already saved)');
         sendResponse({ success: false, error: 'duplicate' });
         showNotification('Saave', 'Ce site est déjà dans votre bibliothèque');
         return;
       }
-      
-      // Si l'API a réussi, on peut continuer
-      if (checkResponse.ok || checkResponse.status === 202) {
-        // Afficher "Bookmark added ✓" après 3 secondes
-        setTimeout(() => {
-          sendStepUpdateToPopup('started');
-          showNotification('Saave', 'Bookmark added ✅');
-        }, 3000);
-        sendResponse({ success: true });
+
+      // Erreurs d'accès ou quota
+      if (processResponse.status === 401) {
+        console.log('❌ EXTENSION: Non connecté');
+        sendResponse({ success: false, error: 'login_required' });
+        showNotification('Saave', 'Connectez-vous pour sauvegarder');
+        return;
+      }
+      if (processResponse.status === 402 || processResponse.status === 403 || processData?.limit) {
+        console.log('⚠️ EXTENSION: Limite atteinte (free plan)');
+        sendResponse({ success: false, error: 'limit_reached' });
+        showNotification('Saave', 'Limite atteinte — passez en Pro');
+        return;
+      }
+
+      // Si lancé correctement, attendre l'étape 1 (apparition de la carte loading) puis afficher "Bookmark saved"
+      if (processResponse.ok || processResponse.status === 202) {
+        console.log('📡 EXTENSION: Process démarré avec succès!');
+        console.log('⏱️ EXTENSION: Waiting for step1 appearance in /api/bookmarks to show "Bookmark saved"');
+
+        // Répondre immédiatement (process lancé)
+        sendResponse({ success: true, started: true, immediate: false });
+
+        // Surveiller l'apparition de la carte (loading/scraping) en arrière-plan (step 1)
+        waitForBookmarkAddedStep1(port, user.id, url.trim(), 30000).then(async (result) => {
+          if (cancelRequested) {
+            console.log('🛑 EXTENSION: Poll aborted (cancelRequested=true)');
+            return;
+          }
+          if (result && result.ok) {
+            console.log('✅✅✅ EXTENSION: Step1 detected, showing "Bookmark saved"');
+            // Stop fallback timer
+            if (pendingSuccessTimer) {
+              try { clearTimeout(pendingSuccessTimer); } catch {}
+              pendingSuccessTimer = null;
+            }
+            try {
+              if (currentPopupPort) {
+                currentPopupPort.postMessage({ type: 'progress', step: 'metadata' });
+              } else {
+                chrome.runtime.sendMessage({ type: 'progress', step: 'metadata' }).catch(() => {});
+              }
+            } catch {}
+            if (lastSourceTabId) {
+              try {
+                const ok = await sendToastToTab(lastSourceTabId, 'success', 'Bookmark saved');
+                console.log('📤 EXTENSION: sent step1 success toast =>', ok);
+              } catch (e) {
+                console.warn('⚠️ EXTENSION: failed to send success toast', e);
+              }
+            }
+            showNotification('Saave', 'Bookmark saved ✓');
+          } else {
+            console.log('⏰ EXTENSION: Timeout / not found; treating as cancelled or failed', result?.reason);
+            if (pendingSuccessTimer) {
+              try { clearTimeout(pendingSuccessTimer); } catch {}
+              pendingSuccessTimer = null;
+            }
+            if (lastSourceTabId) {
+              try {
+                const txt = cancelRequested ? 'Bookmark cancelled' : 'Failed to add';
+                const ok = await sendToastToTab(lastSourceTabId, 'error', txt);
+                console.log('📤 EXTENSION: sent timeout/error toast =>', ok, txt);
+              } catch {}
+            }
+            try {
+              if (currentPopupPort) {
+                currentPopupPort.postMessage({ type: 'error', error: cancelRequested ? 'cancelled' : 'failed' });
+              } else {
+                chrome.runtime.sendMessage({ type: 'error', error: cancelRequested ? 'cancelled' : 'failed' }).catch(() => {});
+              }
+            } catch {}
+            showNotification('Saave', cancelRequested ? 'Bookmark cancelled' : 'Failed to add');
+          }
+        });
+
         return;
       }
     } catch (apiError) {
-      console.error('❌ Erreur lors de la vérification API:', apiError);
+      console.error('❌ Erreur lors de la vérification/lancement API:', apiError);
       // Continue avec l'injection dans l'app en fallback
     }
 
@@ -240,10 +455,10 @@ async function handleSaveBookmarkFromPopup(url, title, sendResponse) {
       args: [url.trim()]
     });
     
-    // Afficher "Bookmark added ✓" après 3 secondes (fallback)
+    // Afficher "Bookmark saved ✓" après 3 secondes (fallback)
     setTimeout(() => {
       sendStepUpdateToPopup('started');
-      showNotification('Saave', 'Bookmark added ✅');
+      showNotification('Saave', 'Bookmark saved ✅');
     }, 3000);
     
     sendResponse({ success: true, message: 'URL envoyée à la webapp pour traitement!' });
@@ -295,6 +510,91 @@ async function findActiveSaavePort() {
     }
   }
   throw new Error('Aucun serveur Saave trouvé. Assurez-vous que l\'application Saave est lancée sur le port 5000 (ou 3000-3010).');
+}
+
+// Fonction pour obtenir le nombre total de bookmarks (inclut loading pour détecter +1 tôt)
+async function getBookmarkCount(port, userId) {
+  try {
+    const response = await fetch(`http://localhost:${port}/api/bookmarks?user_id=${userId}`, {
+      credentials: 'include'
+    });
+    if (response.ok) {
+      const data = await response.json();
+      const total = Array.isArray(data) ? data.length : 0;
+      const loadingCount = Array.isArray(data) ? data.filter(b => b.status === 'loading').length : 0;
+      const finishedCount = Array.isArray(data) ? data.filter(b => !b.processingStep || b.processingStep === 'finished').length : 0;
+
+      console.log(`📊 Bookmark count check: total=${total}, loading=${loadingCount}, finished=${finishedCount}`);
+      return total;
+    }
+  } catch (error) {
+    console.warn('⚠️ Failed to get bookmark count:', error);
+  }
+  return null;
+}
+
+function canonicalizeUrl(raw) {
+  if (!raw) return '';
+  try {
+    const u = new URL(String(raw));
+    const protocol = (u.protocol || 'https:').toLowerCase();
+    const hostname = (u.hostname || '').toLowerCase().replace(/^www\./, '');
+    const port = (u.port && !['80', '443'].includes(u.port)) ? `:${u.port}` : '';
+    let pathname = u.pathname || '/';
+    if (pathname !== '/' && pathname.endsWith('/')) pathname = pathname.slice(0, -1);
+    const params = new URLSearchParams(u.search);
+    ['utm_source','utm_medium','utm_campaign','utm_term','utm_content','gclid','fbclid','ref'].forEach(k => params.delete(k));
+    const qs = params.toString();
+    // Normalize trailing slash so "https://x.com" and "https://x.com/" match
+    const full = `${protocol}//${hostname}${port}${pathname}${qs ? `?${qs}` : ''}`;
+    return full.replace(/\/$/, '');
+  } catch {
+    return String(raw).trim().replace(/\/$/, '');
+  }
+}
+
+async function waitForBookmarkAddedStep1(port, userId, urlToSave, timeoutMs = 12000) {
+  const startTime = Date.now();
+  let checkCount = 0;
+  let failedCount = 0;
+  const target = canonicalizeUrl(urlToSave);
+  console.log(`⏱️ 🔍 STARTING WATCH for bookmark appearance (step1) url=${target}`);
+
+  while (Date.now() - startTime < timeoutMs) {
+    if (cancelRequested) {
+      console.log('🛑 EXTENSION: Cancel requested, aborting watch');
+      return { ok: false, reason: 'cancelled' };
+    }
+    await new Promise(resolve => setTimeout(resolve, 500));
+    checkCount++;
+
+    let data = null;
+    try {
+      const res = await fetch(`http://localhost:${port}/api/bookmarks?user_id=${encodeURIComponent(userId)}`, { credentials: 'include' });
+      if (!res.ok) throw new Error(`status_${res.status}`);
+      data = await res.json();
+    } catch (e) {
+      failedCount++;
+      console.warn(`⚠️ EXTENSION: Check #${checkCount} fetch failed (${failedCount})`, e);
+      if (failedCount >= 4) return { ok: false, reason: 'fetch_failed' };
+      continue;
+    }
+
+    const list = Array.isArray(data) ? data : [];
+    const found = list.find((b) => canonicalizeUrl(b?.url) === target);
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(`🔎 EXTENSION: Check #${checkCount} (${elapsed}s) found=${!!found} total=${list.length}`);
+
+    if (found) {
+      const step = found.processingStep || found.processing_step || null;
+      const status = found.status || null;
+      console.log('✅ EXTENSION: Found bookmark entry:', { status, step, id: found.id });
+      // Step1 reached as soon as entry exists (loading/scraping) OR saved entry exists
+      return { ok: true, status, step, id: found.id };
+    }
+  }
+  console.warn(`⏰ EXTENSION: TIMEOUT waiting for step1 appearance (url=${target})`);
+  return { ok: false, reason: 'timeout' };
 }
 
 // Fonction pour obtenir l'utilisateur connecté
@@ -377,6 +677,28 @@ async function getCurrentUser(port) {
         console.log('⚠️ Impossible d\'exécuter le script dans l\'onglet Saave:', error);
       }
     }
+
+    // Fallback: appeler l'API profil avec credentials pour récupérer l'utilisateur
+    try {
+      console.log('🌐 Tentative /api/user/profile avec credentials');
+      const profileRes = await fetch(`http://localhost:${port}/api/user/profile`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      const profileText = await profileRes.text();
+      let profile;
+      try { profile = JSON.parse(profileText); } catch {}
+      if (profile && profile.user && profile.user.id) {
+        console.log('✅ Utilisateur récupéré via /api/user/profile:', profile.user.email);
+        await chrome.storage.local.set({ saave_user: profile.user });
+        return profile.user;
+      }
+      console.warn('⚠️ Profil API non disponible ou non connecté:', profileRes.status);
+    } catch (apiErr) {
+      console.warn('⚠️ Erreur appel /api/user/profile:', apiErr);
+    }
+
+    console.log('❌ Aucun utilisateur trouvé, retour null');
     return null;
   } catch (error) {
     console.error('❌ Erreur lors de la récupération de l\'utilisateur:', error);
@@ -432,63 +754,8 @@ async function sendToastToTab(tabId, action, text) {
   }
 }
 
-// Gestionnaire principal - clic sur l'icône de l'extension (sans ouvrir/rediriger d'onglet)
-(chrome.action && chrome.action.onClicked ? chrome.action.onClicked : chrome.browserAction.onClicked).addListener(async (tab) => {
-  try {
-    console.log('🚀 [EXT] Icon clicked for URL:', tab?.url);
-
-    if (!tab?.url || !/^https?:/i.test(tab.url)) {
-      showNotification('⚠️ Saave', 'Ouvrez une page web pour l\'ajouter.');
-      return;
-    }
-
-    const urlToAdd = tab.url;
-    const port = await findActiveSaavePort();
-    console.log('✅ [EXT] Server on port:', port);
-
-    // Prompt login if no session
-    const user = await getCurrentUser(port);
-    if (!user || !user.id) {
-      await sendToastToTab(tab.id, 'login', `http://localhost:${port}/auth`);
-      showNotification('Saave', 'Please login to save bookmarks');
-      return;
-    }
-
-    // Afficher "Bookmark added ✅" après 3 secondes (simple et fiable)
-    setTimeout(() => {
-      showNotification('Saave', 'Bookmark added ✅');
-    }, 3000);
-
-    const controller = new AbortController();
-    const res = await fetch(`http://localhost:${port}/api/bookmarks/process`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: urlToAdd, user_id: user?.id, source: 'extension' }),
-      signal: controller.signal,
-    });
-    const text = await res.text();
-    console.log('📡 [EXT] Process response:', res.status, text);
-    if (res.status === 401) {
-      await sendToastToTab(tab.id, 'login', `http://localhost:${port}/auth`);
-      showNotification('Saave', 'Please login to save bookmarks');
-      return;
-    }
-    if (res.status === 409) {
-      await sendToastToTab(tab.id, 'duplicate');
-      try { await sendToastToTab(tab.id, 'hide'); } catch {}
-      showNotification('Saave', 'Already saved • Skipped');
-      return;
-    }
-    if (!res.ok && res.status !== 202) throw new Error(text || `HTTP ${res.status}`);
-
-    // Fallback: si pas d'événement, on a déjà programmé un succès ci-dessus
-  } catch (error) {
-    console.error('❌ [EXT] Error on icon click:', error);
-    // No early timer to clear
-    await sendToastToTab(tab?.id, 'error', error?.message || 'Failed to add');
-    showNotification('Saave - Error', error?.message || 'Failed to add');
-  }
-});
+// NOTE: Legacy onClicked handler removed.
+// We use the single handler defined at the top of this file to avoid double runs and stale errors.
 
 // À l'ouverture/chargement d'un onglet Saave /app, si une URL est en attente, l'injecter
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
@@ -517,41 +784,19 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && typeof msg === 'object' && msg.type) {
     if (msg.type === 'saave:add-started') {
-      showNotification('Saave', 'Adding bookmark...');
-      try { sendStepUpdateToPopup('started'); } catch {}
+      // Ne pas afficher de notification ici, on attend l'augmentation du compteur
+      console.log('📡 Bookmark process started, waiting for count increase...');
       try { if (pendingSuccessTimer) clearTimeout(pendingSuccessTimer); } catch {}
-      try { if (lastSourceTabId) { sendToastToTab(lastSourceTabId, 'success', 'Bookmark saved ✓'); } } catch {}
     }
     if (msg.type === 'saave:add-progress') {
       const step = msg.detail?.step || '';
-      showNotification('Saave', `Processing: ${step}`);
-      
-      // Envoyer la progression au popup
-      try { 
-        sendStepUpdateToPopup('started');
-        // Envoyer aussi l'événement progress avec l'étape
-        if (currentPopupPort) {
-          currentPopupPort.postMessage({
-            type: 'progress',
-            step: step
-          });
-        } else {
-          chrome.runtime.sendMessage({
-            type: 'progress',
-            step: step
-          }).catch(() => {});
-        }
-        
-        // Si on arrive à metadata (étape 2), on considère que c'est ajouté
-        if (step === 'metadata') {
-          sendSuccessToPopup();
-        }
-      } catch {}
+      console.log(`📡 Bookmark progress: ${step}`);
+
+      // Ne pas afficher les messages intermédiaires, on attend l'augmentation du compteur
       try { if (pendingSuccessTimer) clearTimeout(pendingSuccessTimer); } catch {}
-      try { if (lastSourceTabId) { sendToastToTab(lastSourceTabId, 'success', 'Bookmark saved ✓'); } } catch {}
     }
     if (msg.type === 'saave:add-finished') {
-      showNotification('Saave', 'Bookmark added ✅');
+      showNotification('Saave', 'Bookmark saved ✅');
     }
     if (msg.type === 'saave:add-error') {
       const message = String(msg.detail?.message || '');

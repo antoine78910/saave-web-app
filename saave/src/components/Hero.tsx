@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { AnimatedButton } from "@/components/ui/animated-button";
 import { MapPin, Zap, Bot, Tag, Search, Image } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "../hooks/useAuth";
@@ -126,9 +127,13 @@ const Hero = () => {
               </div>
             </div>
 
-            <Button size="lg" className="w-full lg:w-auto" onClick={() => window.location.href = '/auth'}>
+            <AnimatedButton 
+              onClick={() => window.location.href = '/auth'}
+              className="w-full lg:w-auto"
+              variant="green"
+            >
               Get started
-            </Button>
+            </AnimatedButton>
           </div>
 
           {/* Right Column - Demo Card */}

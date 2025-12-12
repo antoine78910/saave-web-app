@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { getAppUrl } from '../../lib/urls';
 
 export default function ResetAuthPage() {
   const router = useRouter();
@@ -38,7 +39,7 @@ export default function ResetAuthPage() {
       // Rediriger vers /app après 2 secondes
       setTimeout(() => {
         console.log('🔄 Redirection vers /app...');
-        window.location.href = '/app';
+        window.location.href = getAppUrl('/');
       }, 2000);
     }
   }, [router]);

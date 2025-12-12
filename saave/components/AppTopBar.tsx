@@ -30,14 +30,7 @@ const AppTopBar: React.FC = () => {
           </Link>
         )}
 
-        {user && subscription?.plan !== "pro" && (
-          <Link
-            href="/upgrade"
-            className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all border bg-[#232526] shadow-xs hover:bg-accent hover:text-white h-8 px-3 border-accent text-accent font-bold"
-          >
-            Upgrade
-          </Link>
-        )}
+        
 
         {user && subscription?.plan === "pro" && (
           <button
@@ -65,7 +58,12 @@ const AppTopBar: React.FC = () => {
         )}
 
         {user && (
-          <UserMenu userEmail={userEmail || "No email"} displayName={user?.display_name} onSignOut={signOut} />
+          <UserMenu 
+            userEmail={userEmail || "No email"} 
+            displayName={user?.display_name} 
+            onSignOut={signOut}
+            isPro={subscription?.plan === 'pro'}
+          />
         )}
       </div>
     </nav>

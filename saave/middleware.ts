@@ -30,7 +30,7 @@ export async function middleware(req: NextRequest) {
 
 		// Exclure les routes API de la protection (notamment /app/api/inngest pour Inngest)
 		const isApiRoute = pathname.startsWith('/api/') || pathname.startsWith('/app/api/')
-		
+
 		// Garde simple basée sur le chemin (pas de redirection cross‑host)
 		const protectedPaths = ['/app', '/account', '/billing']
 		const isProtectedPath = protectedPaths.some(p => req.nextUrl.pathname.startsWith(p))

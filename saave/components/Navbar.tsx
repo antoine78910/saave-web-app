@@ -3,6 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useState, useEffect } from "react";
+import { AnimatedButton } from "./ui/animated-button";
 
 interface ProcessingIndicatorProps {
   isProcessing: boolean;
@@ -120,18 +121,15 @@ const Navbar = ({
           status={indicatorStatus}
         />
         
-        <nav className="flex items-center gap-6 ml-4">
-          <Link href="/" className="text-sm font-medium hover:text-primary transition-colors">
-            Home
-          </Link>
-          <Link href="#pricing" className="text-sm font-medium hover:text-primary transition-colors scroll-smooth">
-            Pricing
-          </Link>
+        <nav className="flex items-center gap-3 ml-auto">
           <Link 
             href="/auth" 
-            className="bg-[hsl(var(--primary))] hover:bg-[hsl(var(--primary))/90] text-[hsl(var(--primary-foreground))] px-4 py-2 rounded-md text-sm font-medium transition-colors"
+            className="bg-white/10 hover:bg-white/20 text-white border border-white/20 px-4 h-[36px] rounded-md text-sm font-medium transition-all flex items-center justify-center"
           >
             Sign In
+          </Link>
+          <Link href="/auth">
+            <AnimatedButton />
           </Link>
         </nav>
       </div>

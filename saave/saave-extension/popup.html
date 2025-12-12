@@ -1,194 +1,202 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Saave - Quick Bookmark</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Saave - Quick Bookmark</title>
+  <style>
+    :root {
+      --bg: #09090b;
+      --card: #18181b;
+      --muted: #71717a;
+      --text: #fafafa;
+      --border: #27272a;
+      --accent: #10b981;
+      --accent-strong: #059669;
+      --success: #10b981;
+      --error: #ef4444;
+    }
 
-        body {
-            width: 300px;
-            min-height: 200px;
-            background: #181a1b;
-            color: white;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            font-size: 14px;
-        }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
 
-        .container {
-            padding: 16px;
-        }
+    html, body {
+      width: 280px;
+      min-height: 72px;
+      background: transparent;
+      overflow: visible;
+    }
 
-        .header {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-bottom: 16px;
-            padding-bottom: 12px;
-            border-bottom: 1px solid #333;
-        }
+    body {
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif;
+      padding: 0;
+      position: fixed;
+      top: 16px;
+      right: 16px;
+    }
 
-        .logo {
-            width: 24px;
-            height: 24px;
-            border-radius: 4px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            overflow: hidden;
-        }
-        
-        .logo img {
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
-        }
+    .toast {
+      width: 280px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 14px;
+      overflow: hidden;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+      backdrop-filter: blur(12px);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      animation: slideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
 
-        .title {
-            font-weight: 600;
-            color: #f1f5f9;
-        }
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateY(-12px) scale(0.95);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
 
-        .status {
-            text-align: center;
-            padding: 20px 0;
-        }
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
 
-        .status-icon {
-            font-size: 32px;
-            margin-bottom: 8px;
-            display: block;
-        }
+    .status-indicator {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.2);
+      display: grid;
+      place-items: center;
+      position: relative;
+      flex-shrink: 0;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
 
-        .status-text {
-            font-size: 16px;
-            font-weight: 500;
-            margin-bottom: 4px;
-        }
+    .spinner {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: 2px solid rgba(113, 113, 122, 0.3);
+      border-top-color: var(--accent);
+      animation: spin 0.6s linear infinite;
+    }
 
-        .status-subtitle {
-            font-size: 12px;
-            color: #94a3b8;
-        }
+    .status-icon {
+      width: 14px;
+      height: 14px;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+    }
 
-        .page-info {
-            background: #232526;
-            border: 1px solid #374151;
-            border-radius: 8px;
-            padding: 12px;
-            margin-bottom: 16px;
-        }
+    .text-group {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      flex: 1;
+    }
 
-        .page-url {
-            font-size: 12px;
-            color: #3b82f6;
-            word-break: break-all;
-            margin-bottom: 8px;
-        }
+    .status-text {
+      font-weight: 500;
+      color: var(--text);
+      font-size: 13px;
+      letter-spacing: -0.01em;
+      line-height: 1.3;
+    }
+    .status-subtitle {
+      font-size: 11px;
+      color: var(--muted);
+      display: none;
+      line-height: 1.3;
+    }
 
-        .page-title {
-            font-weight: 500;
-            color: #f1f5f9;
-            line-height: 1.4;
-        }
+    .progress-track {
+      width: 100%;
+      height: 2px;
+      background: rgba(39, 39, 42, 0.8);
+      border-radius: 999px;
+      margin: 10px 0 0;
+      overflow: hidden;
+    }
+    .progress {
+      height: 100%;
+      width: 34%;
+      border-radius: 999px;
+      background: var(--accent);
+      transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
+    }
 
-        .spinner {
-            border: 2px solid #374151;
-            border-top: 2px solid #3b82f6;
-            border-radius: 50%;
-            width: 24px;
-            height: 24px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 12px auto;
-        }
+    .error-message {
+      display: none;
+      margin-top: 10px;
+      font-size: 11px;
+      color: #fca5a5;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.2);
+      line-height: 1.4;
+    }
 
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
+    .button { display: none; }
 
-        .success-icon {
-            color: #10b981;
-        }
+    .toast.success {
+      border-color: rgba(16, 185, 129, 0.4);
+      background: linear-gradient(135deg, var(--card) 0%, rgba(16, 185, 129, 0.05) 100%);
+    }
+    .toast.error {
+      border-color: rgba(239, 68, 68, 0.4);
+      background: linear-gradient(135deg, var(--card) 0%, rgba(239, 68, 68, 0.05) 100%);
+    }
 
-        .error-icon {
-            color: #ef4444;
-        }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
 
-        .loading-icon {
-            color: #3b82f6;
-        }
+    .toast.success .status-indicator {
+      background: rgba(16, 185, 129, 0.15);
+      border-color: rgba(16, 185, 129, 0.3);
+    }
 
-        .button {
-            width: 100%;
-            padding: 10px 16px;
-            background: #10b981;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            font-size: 14px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: background-color 0.2s;
-        }
-
-        .button:hover {
-            background: #047857;
-        }
-
-        .button:disabled {
-            background: #374151;
-            cursor: not-allowed;
-        }
-
-        .error-message {
-            background: #fecaca;
-            color: #991b1b;
-            padding: 8px 12px;
-            border-radius: 6px;
-            font-size: 12px;
-            margin-top: 12px;
-        }
-
-
-    </style>
+    .toast.error .status-indicator {
+      background: rgba(239, 68, 68, 0.15);
+      border-color: rgba(239, 68, 68, 0.3);
+    }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <div class="logo">
-                <img src="icons/favicon.png" alt="Saave" onerror="this.style.display='none'; this.parentElement.innerHTML='S'; this.parentElement.style.background='linear-gradient(135deg, #10b981, #047857)'; this.parentElement.style.color='white'; this.parentElement.style.fontWeight='bold'; this.parentElement.style.fontSize='12px';">
-            </div>
-            <div class="title">Saave</div>
-        </div>
-
-        <div id="page-info" class="page-info" style="display: none;">
-            <div id="page-url" class="page-url"></div>
-            <div id="page-title" class="page-title"></div>
-        </div>
-
-        <div id="status" class="status">
-            <div id="status-icon" class="status-icon">🚀</div>
-            <div id="status-text" class="status-text">Prêt à sauvegarder</div>
-            <div id="status-subtitle" class="status-subtitle">Regardez le processus dans l'app Saave.io</div>
-        </div>
-
-        <button id="save-button" class="button">
-            Envoyer vers Saave.io
-        </button>
-
-        <div id="error-message" class="error-message" style="display: none;"></div>
-        
-        <div style="margin-top: 12px; font-size: 10px; color: #64748b; text-align: center;">
-            Problème de connexion ? Ctrl+Shift+R pour vider le cache
-        </div>
+  <div id="toast" class="toast">
+    <div class="status-row">
+      <div class="status-indicator">
+        <div class="spinner" id="status-spinner"></div>
+        <div class="status-icon" id="status-icon">✓</div>
+      </div>
+      <div class="text-group">
+        <div id="status-text" class="status-text">Sauvegarde en cours…</div>
+        <div id="status-subtitle" class="status-subtitle">Connexion à Saave</div>
+      </div>
     </div>
 
-    <script src="popup.js"></script>
+    <div class="progress-track">
+      <div id="progress" class="progress"></div>
+    </div>
+
+    <div id="error-message" class="error-message"></div>
+
+    <button id="save-button" class="button" type="button" aria-hidden="true">
+      Sauvegarder cette page
+    </button>
+  </div>
+
+  <script src="popup.js"></script>
 </body>
 </html>

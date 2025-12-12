@@ -2,12 +2,15 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { type NextRequest } from 'next/server';
+import { getAppBaseUrl } from '../../../lib/urls';
 
 export async function GET(request: NextRequest) {
   console.log('🔄 AUTH CALLBACK: Début du traitement de callback');
   
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get('code');
+  let exchangedAccessToken: string | null = null;
+  let exchangedRefreshToken: string | null = null;
   const error = requestUrl.searchParams.get('error');
   const errorDescription = requestUrl.searchParams.get('error_description');
   const tokenHash = requestUrl.searchParams.get('token_hash');
@@ -48,6 +51,11 @@ export async function GET(request: NextRequest) {
 
       if (data.session) {
         console.log('✅ AUTH CALLBACK: Session créée avec succès pour:', data.user?.email);
+        try {
+          exchangedAccessToken = data.session.access_token || null as any;
+          // @ts-ignore refresh_token may be available on session
+          exchangedRefreshToken = (data.session as any).refresh_token || null;
+        } catch {}
       }
     } catch (error) {
       console.error('❌ AUTH CALLBACK: Erreur inattendue:', error);
@@ -84,8 +92,23 @@ export async function GET(request: NextRequest) {
   }
 
   // URL to redirect to after sign in process completes
-  const redirectBase = process.env.NEXT_PUBLIC_SITE_URL || requestUrl.origin;
-  const finalUrl = `${redirectBase}/app`;
+  // If a session exists, forward tokens via URL hash so app subdomain can set cookies
+  let finalUrl = `${getAppBaseUrl()}/`;
+  if (exchangedAccessToken && exchangedRefreshToken) {
+    // Compute app base from request host to support localhost dev without env overrides
+    const host = requestUrl.hostname;
+    const port = requestUrl.port ? `:${requestUrl.port}` : '';
+    const proto = requestUrl.protocol; // includes trailing :
+    let appBase = getAppBaseUrl();
+    try {
+      if (host === 'localhost' || /\.localhost$/i.test(host)) {
+        appBase = `${proto}//app.localhost${port}`.replace(/\/+$/, '');
+      } else if (/\.saave\.io$/i.test(host)) {
+        appBase = `https://app.saave.io`;
+      }
+    } catch {}
+    finalUrl = `${appBase}/#access_token=${encodeURIComponent(exchangedAccessToken)}&refresh_token=${encodeURIComponent(exchangedRefreshToken)}`;
+  }
   
   console.log('🔄 AUTH CALLBACK: Redirection vers:', finalUrl);
   return NextResponse.redirect(finalUrl);

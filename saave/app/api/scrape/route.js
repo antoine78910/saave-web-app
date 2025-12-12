@@ -16,54 +16,45 @@ export async function POST(req) {
   }
   
   try {
-    function resolveLocalChromeExecutable() {
-      const envPaths = [
-        process.env.PUPPETEER_EXECUTABLE_PATH,
-        process.env.CHROME_EXECUTABLE_PATH,
-        process.env.CHROME_PATH,
-      ].filter(Boolean);
-      const candidatePaths = [
-        ...envPaths,
-        'C://Program Files//Google//Chrome//Application//chrome.exe',
-        'C://Program Files (x86)//Google//Chrome//Application//chrome.exe',
-        'C://Program Files//Microsoft//Edge//Application//msedge.exe',
-        'C://Program Files (x86)//Microsoft//Edge//Application//msedge.exe',
-        'C://Program Files//BraveSoftware//Brave-Browser//Application//brave.exe',
-        'C://Program Files (x86)//BraveSoftware//Brave-Browser//Application//brave.exe',
-      ];
-      for (const candidate of candidatePaths) {
-        try {
-          if (candidate && fs.existsSync(candidate)) return candidate;
-        } catch {}
-      }
-      return null;
-    }
-
     let browser = null;
 
+    // IMPORTANT: Always use bundled Chromium from puppeteer, NEVER user's Chrome
+    // This prevents closing the user's browser window
     if (process.platform === 'win32' || process.env.NODE_ENV !== 'production') {
       try {
         const maybePuppeteer = await import('puppeteer');
         const pptr = maybePuppeteer.default || maybePuppeteer;
         const pptrExecutablePath = typeof pptr.executablePath === 'function' ? pptr.executablePath() : undefined;
-        // Always use bundled Chromium, never user's Chrome to avoid closing their browser
+        
+        // Verify it's the bundled Chromium, not system Chrome
+        if (pptrExecutablePath && !pptrExecutablePath.includes('.cache\\puppeteer') && !pptrExecutablePath.includes('.cache/puppeteer') && !pptrExecutablePath.includes('node_modules')) {
+          console.warn('⚠️ WARNING: executablePath might be system Chrome, forcing bundled Chromium');
+          // Force bundled Chromium by not specifying executablePath
         browser = await pptr.launch({
           headless: 'new',
-          executablePath: pptrExecutablePath, // This is bundled Chromium, not user's Chrome
+            // Don't specify executablePath - let puppeteer use its bundled Chromium
           pipe: true,
-          args: ['--no-sandbox', '--disable-setuid-sandbox', '--remote-debugging-pipe'],
-        });
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--remote-debugging-port=0'], // Use random port, not pipe
+          });
+        } else {
+          // Use bundled Chromium
+          browser = await pptr.launch({
+            headless: 'new',
+            executablePath: pptrExecutablePath, // This is bundled Chromium
+            pipe: true,
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--remote-debugging-port=0'], // Use random port, not pipe
+          });
+        }
         console.log('🚀 Launched puppeteer (bundled Chromium)');
       } catch (e) {
         console.warn('⚠️ puppeteer not available, using @sparticuz/chromium instead:', e?.message);
-        // Don't use system Chrome - use @sparticuz/chromium instead
       }
     }
 
     if (!browser) {
       const executablePath = (await chromium.executablePath()) || '/usr/bin/chromium';
       browser = await puppeteer.launch({
-        args: [...chromium.args, '--remote-debugging-pipe'],
+        args: [...chromium.args, '--remote-debugging-port=0'], // Use random port
         defaultViewport: chromium.defaultViewport,
         executablePath,
         headless: chromium.headless,

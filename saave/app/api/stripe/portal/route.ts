@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
+import { getAppBaseUrl } from '../../../../lib/urls';
 
 export async function POST(request: NextRequest) {
   try {
@@ -26,7 +27,7 @@ export async function POST(request: NextRequest) {
     // Créer une session du portail de facturation
     const portalSession = await stripe.billingPortal.sessions.create({
       customer: customerId,
-      return_url: `${request.nextUrl.origin}/app`,
+      return_url: `${getAppBaseUrl()}/`,
     });
 
     return NextResponse.json({ url: portalSession.url });

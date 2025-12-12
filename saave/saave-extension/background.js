@@ -145,7 +145,7 @@ async function handleSaveBookmarkFromPopup(url, title, sendResponse) {
         // Fallback success si l'app n'émet pas d'événements à temps
         try { if (pendingSuccessTimer) clearTimeout(pendingSuccessTimer); } catch {}
         pendingSuccessTimer = setTimeout(() => {
-          try { if (lastSourceTabId) sendToastToTab(lastSourceTabId, 'success', 'Bookmark added ✓'); } catch {}
+          try { if (lastSourceTabId) sendToastToTab(lastSourceTabId, 'success', 'Bookmark saved ✓'); } catch {}
         }, 2500);
       }
     } catch {}
@@ -593,12 +593,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       // No start notification from extension; info toasts are shown in page
     }
     if (msg.type === 'saave:add-progress') {
-      // On first progress step from webapp, show success toast "Bookmark added"
+      // On first progress step from webapp, show success toast "Bookmark saved"
       try {
         const firstSteps = new Set(['scraping','metadata','screenshot','describe','summary','tags','saving']);
         const step = String(msg.detail?.step || '');
         if (firstSteps.has(step)) {
-          showNotification('Saave', 'Bookmark added ✓');
+          showNotification('Saave', 'Bookmark saved ✓');
           try { sendStepUpdateToPopup('started'); } catch {}
           try { if (pendingSuccessTimer) clearTimeout(pendingSuccessTimer); } catch {}
           try { if (lastSourceTabId) { sendToastToTab(lastSourceTabId, 'success', 'Bookmark saved ✓'); } } catch {}

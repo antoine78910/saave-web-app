@@ -4,12 +4,15 @@ import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
+import { useAuth } from "../../src/hooks/useAuth";
+import { getAppUrl } from "../../lib/urls";
 
 function SuccessContent() {
   // const router = useRouter(); // Temporarily unused
   const searchParams = useSearchParams();
   const sessionId = searchParams.get('session_id');
   const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
 
   useEffect(() => {
     // Attendre un peu pour laisser les webhooks se traiter
@@ -19,6 +22,21 @@ function SuccessContent() {
 
     return () => clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    // En DEV: si webhook non configuré, marquer le plan comme pro localement
+    const promoteIfNeeded = async () => {
+      try {
+        if (!sessionId || !user?.email) return;
+        await fetch('/api/user/subscription', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: user.email, plan: 'pro' })
+        });
+      } catch {}
+    };
+    promoteIfNeeded();
+  }, [sessionId, user?.email]);
 
   if (loading) {
     return (
@@ -83,10 +101,7 @@ function SuccessContent() {
 
         {/* Action Buttons */}
         <div className="space-y-4">
-          <Link 
-            href="/app"
-            className="block w-full bg-green-600 text-white py-3 px-6 rounded-lg font-bold hover:bg-green-700 transition-colors"
-          >
+          <Link href={getAppUrl('/')} className="block w-full bg-green-600 text-white py-3 px-6 rounded-lg font-bold hover:bg-green-700 transition-colors">
             Start Using Saave Pro
           </Link>
           

@@ -3,7 +3,6 @@
 import Hero from "../components/Hero";
 import Features from "../components/Features";
 import OrganizationSection from "../components/OrganizationSection";
-import Pricing from "../components/Pricing";
 import Footer from "../components/Footer";
 import Navbar from "../components/Navbar";
 import { useEffect } from "react";
@@ -16,8 +15,19 @@ const Index = () => {
   const router = useRouter();
 
   useEffect(() => {
-    // Handle hash-based tokens if we land on /
+    // Redirection automatique : si on est sur app.localhost, rediriger vers /app
     if (typeof window !== 'undefined') {
+      const hostname = window.location.hostname;
+      const pathname = window.location.pathname;
+      
+      // Si on est sur app.localhost et qu'on est à la racine, rediriger vers /app
+      if ((hostname === 'app.localhost' || hostname.startsWith('app.')) && pathname === '/') {
+        console.log('Redirecting app.localhost root to /app');
+        router.replace('/app');
+        return;
+      }
+      
+      // Handle hash-based tokens if we land on /
       const hash = window.location.hash?.replace(/^#/, '');
       if (hash) {
         const params = new URLSearchParams(hash);
@@ -26,27 +36,21 @@ const Index = () => {
         if (access_token && refresh_token) {
           supabase.auth.setSession({ access_token, refresh_token }).then(() => {
             try { window.history.replaceState({}, '', '/'); } catch {}
-            const base = process.env.NEXT_PUBLIC_SITE_URL || window.location.origin;
-            router.replace(`${base.endsWith('/app') ? base : base + '/app'}`);
+            router.replace('/app');
           });
         }
       }
     }
   }, [router]);
 
-  useEffect(() => {
-    if (!loading && user) {
-      router.replace("/app");
-    }
-  }, [loading, user, router]);
+  // Redirection supprimée : l'utilisateur peut maintenant accéder à la page d'accueil même s'il est connecté
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: "hsl(var(--background))" }}>
       <Navbar />
       <Hero />
       <Features />
-      <OrganizationSection />
-      <Pricing />
+      {/* OrganizationSection removed per request */}
       <Footer />
     </div>
   );

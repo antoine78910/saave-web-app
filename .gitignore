@@ -84,5 +84,8 @@ jspm_packages/
 .claude/
 nul
 
+# Local temp folder accidentally created under saave/
+saave/UsersantodOneDriveBureauCode-Saastest_autosaavetemp-saveit/
+
 # Package lock files (optional, if you prefer to commit them)
 # package-lock.json

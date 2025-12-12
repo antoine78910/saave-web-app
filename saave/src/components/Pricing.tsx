@@ -1,6 +1,6 @@
 
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { AnimatedButton } from "@/components/ui/animated-button";
 import { Check } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
@@ -121,14 +121,13 @@ const Pricing = () => {
                   ))}
                 </div>
                 
-                <Button 
+                <AnimatedButton 
                   className="w-full" 
-                  variant={plan.popular ? "default" : "outline"}
-                  size="lg"
+                  variant="green"
                   onClick={plan.action}
                 >
                   {plan.cta}
-                </Button>
+                </AnimatedButton>
               </div>
             </Card>
           ))}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from '../../src/hooks/useAuth';
+import { getAppUrl, getSiteUrl } from '../../lib/urls';
 
 export default function TestAuthPage() {
   const { user, loading, signOut } = useAuth();
@@ -31,14 +32,14 @@ export default function TestAuthPage() {
         
         <div className="space-x-4">
           <button 
-            onClick={() => window.location.href = '/app'}
+            onClick={() => window.location.href = getAppUrl('/')}
             className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded"
           >
             Aller vers /app
           </button>
           
           <button 
-            onClick={() => window.location.href = '/auth'}
+            onClick={() => window.location.href = getSiteUrl('/auth')}
             className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded"
           >
             Aller vers /auth

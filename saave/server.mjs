@@ -3,11 +3,16 @@ import { parse } from 'url';
 import next from 'next';
 
 const dev = process.env.NODE_ENV !== 'production';
-const hostname = process.env.HOST || 'localhost';
-const port = process.env.PORT || 3000;
+const hostname = process.env.HOST || '0.0.0.0'; // Écouter sur toutes les interfaces pour app.localhost
+const port = process.env.PORT || 5000;
 
 // Préparer l'application Next.js
-const app = next({ dev, hostname, port });
+// Next.js doit accepter app.localhost comme hostname valide
+const app = next({ 
+  dev, 
+  hostname: '0.0.0.0', // Écouter sur toutes les interfaces
+  port 
+});
 const handle = app.getRequestHandler();
 
 app.prepare().then(() => {
@@ -23,10 +28,11 @@ app.prepare().then(() => {
       res.statusCode = 500;
       res.end('Erreur interne du serveur');
     }
-  }).listen(port, (err) => {
+  }).listen(port, '0.0.0.0', (err) => {
     if (err) throw err;
-    console.log(`> 🚀 Serveur prêt à l'adresse http://${hostname}:${port}`);
+    console.log(`> 🚀 Serveur prêt à l'adresse http://app.localhost:${port}`);
     console.log(`> 📂 Mode: ${dev ? 'développement' : 'production'}`);
     console.log('> ✅ Votre application SAAVE est en ligne!');
+    console.log(`> 🌐 Accessible sur: http://app.localhost:${port}`);
   });
 });

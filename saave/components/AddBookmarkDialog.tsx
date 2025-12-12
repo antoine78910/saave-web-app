@@ -10,6 +10,7 @@ import { useToast } from "../src/hooks/use-toast";
 import { supabase } from "../src/integrations/supabase/client";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { getAppUrl } from "../lib/urls";
 
 interface AddBookmarkDialogProps {
   onAdd?: (bookmark: {
@@ -182,7 +183,7 @@ export const AddBookmarkDialog = ({ onAdd, showTrigger = true }: AddBookmarkDial
       if (onAdd) {
         onAdd(bookmark);
       } else {
-        router.push('/app');
+        router.push(getAppUrl('/'));
       }
 
       // Reset form

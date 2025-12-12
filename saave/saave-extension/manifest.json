@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Saave",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Sauvegarde intelligente de liens.",
   "action": {
     "default_title": "Ajouter à Saave",
@@ -20,21 +20,28 @@
     "storage",
     "tabs",
     "scripting",
-    "notifications"
+    "notifications",
+    "activeTab"
   ],
   "host_permissions": [
     "<all_urls>"
   ],
+  "externally_connectable": {
+    "matches": [
+      "http://localhost:*/*",
+      "https://*.saave.io/*"
+    ]
+  },
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background-sw.js"
   },
   "content_scripts": [
     {
       "matches": [
-        "http://localhost/*",
-        "https://saave.io/*"
+        "<all_urls>"
       ],
       "js": ["content.js"],
+      "css": ["content.css"],
       "run_at": "document_start"
     }
   ]

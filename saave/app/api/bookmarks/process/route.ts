@@ -30,8 +30,8 @@ async function append(userId: string, item: any) {
 export async function POST(request: Request) {
 	let url: string | undefined
 	let canonicalUrl: string | undefined
-	let userId: string | undefined
-	let id: string | undefined
+	let userId = ''
+	let id = ''
 	const started = Date.now()
 	
 	try {
@@ -49,7 +49,7 @@ export async function POST(request: Request) {
 		const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
 		const { data: { session } } = await supabase.auth.getSession()
 
-		userId = session?.user?.id
+		userId = session?.user?.id ?? ''
 		const isLocalhost = reqUrl.hostname === 'localhost' || /\.localhost$/i.test(reqUrl.hostname)
 		if (!userId && userIdFromBody && (process.env.NODE_ENV !== 'production' || isLocalhost || source === 'extension')) {
 			userId = String(userIdFromBody)
@@ -347,23 +347,28 @@ export async function POST(request: Request) {
 			await append(userId, { ...seed, processingStep: 'finished', status: 'complete', title, description, favicon, tags, thumbnail })
 			console.log('✅ BOOKMARK SAVED SUCCESSFULLY')
 
-			// Send Inngest event for bookmark processing
-			try {
-				await inngest.send({
-					name: 'bookmark/process',
-					data: {
-						bookmarkId: saved.id,
-						url: canonicalUrl,
-						title: title || domain,
-						userId: userId,
-						status: 'complete',
-						durationMs: Date.now() - started,
-					},
-				})
-				console.log('📤 Inngest event sent for bookmark:', saved.id)
-			} catch (inngestError) {
-				// Don't fail the request if Inngest fails
-				console.warn('⚠️ Failed to send Inngest event:', inngestError)
+			// Send Inngest event for bookmark processing (only if key is configured)
+			const canSendInngest = Boolean(process.env.INNGEST_EVENT_KEY);
+			if (canSendInngest) {
+				try {
+					await inngest.send({
+						name: 'bookmark/process',
+						data: {
+							bookmarkId: saved.id,
+							url: canonicalUrl,
+							title: title || domain,
+							userId: userId,
+							status: 'complete',
+							durationMs: Date.now() - started,
+						},
+					})
+					console.log('📤 Inngest event sent for bookmark:', saved.id)
+				} catch (inngestError) {
+					// Don't fail the request if Inngest fails
+					console.warn('⚠️ Failed to send Inngest event:', inngestError)
+				}
+			} else {
+				console.warn('ℹ️ Skipping Inngest send: INNGEST_EVENT_KEY not configured');
 			}
 
 			// cleanup in‑memory queue
@@ -380,21 +385,26 @@ export async function POST(request: Request) {
 			console.error('❌ ERROR:', e?.message || e)
 			
 			// Send Inngest event for failed bookmark processing
-			try {
-				await inngest.send({
-					name: 'bookmark/process',
-					data: {
-						bookmarkId: id,
-						url: canonicalUrl || url,
-						userId: userId,
-						status: 'error',
-						error: e?.message || 'process_failed',
-						durationMs: Date.now() - started,
-					},
-				})
-			} catch (inngestError) {
-				// Don't fail the request if Inngest fails
-				console.warn('⚠️ Failed to send Inngest error event:', inngestError)
+			const canSendInngest = Boolean(process.env.INNGEST_EVENT_KEY);
+			if (canSendInngest) {
+				try {
+					await inngest.send({
+						name: 'bookmark/process',
+						data: {
+							bookmarkId: id,
+							url: canonicalUrl || url,
+							userId: userId,
+							status: 'error',
+							error: e?.message || 'process_failed',
+							durationMs: Date.now() - started,
+						},
+					})
+				} catch (inngestError) {
+					// Don't fail the request if Inngest fails
+					console.warn('⚠️ Failed to send Inngest error event:', inngestError)
+				}
+			} else {
+				console.warn('ℹ️ Skipping Inngest error send: INNGEST_EVENT_KEY not configured');
 			}
 			
 			return NextResponse.json({ ok: false, error: e?.message || 'process_failed' }, { status: 500, headers: { ...corsHeaders() as any } })
@@ -404,5 +414,3 @@ export async function POST(request: Request) {
 		return NextResponse.json({ error: 'invalid_json' }, { status: 400, headers: { ...corsHeaders() as any } })
 	}
 }
-
-

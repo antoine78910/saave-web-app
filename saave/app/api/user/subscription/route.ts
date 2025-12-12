@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, writeFileSync } from 'fs';
 import { join } from 'path';
 
 export async function GET(request: NextRequest) {
@@ -37,14 +37,34 @@ export async function GET(request: NextRequest) {
       console.warn('⚠️ Erreur lecture bookmarks pour comptage:', error);
     }
 
-    // En mode développement, simuler un plan GRATUIT avec limite de 20
+    // Charger un éventuel plan forcé en dev depuis un fichier local
+    const SUBS_FILE = join(process.cwd(), 'dev-subscriptions.json');
+    let forcedPlan: 'free' | 'pro' = 'free';
+    let lastStatus: string | null = null;
+    if (existsSync(SUBS_FILE)) {
+      try {
+        const subsRaw = readFileSync(SUBS_FILE, 'utf8');
+        const subs = JSON.parse(subsRaw) as Record<string, { plan: 'free' | 'pro'; status?: string | null }>;
+        const record = subs[email];
+        if (record && (record.plan === 'pro' || record.plan === 'free')) {
+          forcedPlan = record.plan;
+          lastStatus = record.status ?? null;
+        }
+      } catch (e) {
+        console.warn('⚠️ Erreur lecture dev-subscriptions.json:', e);
+      }
+    }
+
+    // Treat any non-canceled/expired status as Pro to avoid flicker in dev
+    const nonProDowngrade = new Set(['canceled', 'incomplete_expired']);
+    const isPro = forcedPlan === 'pro' || (lastStatus && !nonProDowngrade.has(lastStatus));
     const mockSubscription = {
-      subscription_type: 'free',
-      subscription_status: 'active',
-      bookmarks_limit: 20, // Pour la compatibilité API
-      bookmarks_count: userBookmarksCount, // Compter les vrais bookmarks
-      plan: 'free', // Plan pour le frontend
-      bookmarkLimit: 20, // Nom utilisé par useSubscription hook
+      subscription_type: isPro ? 'pro' : 'free',
+      subscription_status: isPro ? (lastStatus || 'active') : (lastStatus || 'active'),
+      bookmarks_limit: isPro ? -1 : 20, // compat API
+      bookmarks_count: userBookmarksCount,
+      plan: isPro ? 'pro' : 'free', // frontend
+      bookmarkLimit: isPro ? -1 : 20, // hook
       dev_mode: true
     };
     
@@ -79,6 +99,36 @@ export async function GET(request: NextRequest) {
         },
       }
     );
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const email = String(body?.email || '').trim();
+    const plan = String(body?.plan || 'free').toLowerCase() as 'free' | 'pro';
+    if (!email) {
+      return NextResponse.json({ error: 'Email required' }, { status: 400 });
+    }
+    if (plan !== 'free' && plan !== 'pro') {
+      return NextResponse.json({ error: 'Invalid plan' }, { status: 400 });
+    }
+
+    const SUBS_FILE = join(process.cwd(), 'dev-subscriptions.json');
+    let subs: Record<string, { plan: 'free' | 'pro' }> = {};
+    if (existsSync(SUBS_FILE)) {
+      try {
+        subs = JSON.parse(readFileSync(SUBS_FILE, 'utf8')) || {};
+      } catch {
+        subs = {};
+      }
+    }
+    subs[email] = { plan };
+    writeFileSync(SUBS_FILE, JSON.stringify(subs, null, 2), 'utf8');
+
+    return NextResponse.json({ ok: true, email, plan });
+  } catch (e) {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 }
 

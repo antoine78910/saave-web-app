@@ -23,39 +23,50 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Déterminer le prix et l'intervalle selon le plan choisi
+    // Déterminer le plan
     const isYearly = yearly === true;
-    const unitAmount = isYearly ? 6000 : 900; // $60/an ou $9/mois en centimes
+    const priceIdMonthly = process.env.STRIPE_PRICE_ID_MONTHLY;
+    const priceIdYearly = process.env.STRIPE_PRICE_ID_YEARLY;
+    const envPriceId = isYearly ? priceIdYearly : priceIdMonthly;
+    const unitAmount = isYearly ? 6000 : 900; // fallback $60/an ou $9/mois en centimes
     const interval = isYearly ? 'year' : 'month';
 
     // Créer une session de checkout Stripe
-    const session = await stripe.checkout.sessions.create({
+    const base: Stripe.Checkout.SessionCreateParams = {
       payment_method_types: ['card'],
-      line_items: [
-        {
-          price_data: {
-            currency: 'usd',
-            product_data: {
-              name: `Saave Pro ${isYearly ? 'Yearly' : 'Monthly'}`,
-              description: `Unlimited bookmarks and premium features - ${isYearly ? 'Annual' : 'Monthly'} billing`,
-            },
-            unit_amount: unitAmount,
-            recurring: {
-              interval: interval,
-            },
-          },
-          quantity: 1,
-        },
-      ],
+      line_items: [],
       mode: 'subscription',
       customer_email: email,
-      success_url: `${request.nextUrl.origin}/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${request.nextUrl.origin}/upgrade?canceled=true`,
+      allow_promotion_codes: true,
+      // Force http on localhost to avoid https->http callback mismatch during dev
+      success_url: `${(request.nextUrl.hostname === 'localhost' || /\.localhost$/.test(request.nextUrl.hostname)) ? `http://${request.nextUrl.host}` : request.nextUrl.origin}/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${(request.nextUrl.hostname === 'localhost' || /\.localhost$/.test(request.nextUrl.hostname)) ? `http://${request.nextUrl.host}` : request.nextUrl.origin}/upgrade?canceled=true`,
       metadata: {
         email,
         plan: isYearly ? 'yearly' : 'monthly',
       },
-    });
+    };
+
+    if (envPriceId) {
+      base.line_items = [{ price: envPriceId, quantity: 1 }];
+    } else {
+      base.line_items = [{
+        price_data: {
+          currency: 'usd',
+          product_data: {
+            name: `Saave Pro ${isYearly ? 'Yearly' : 'Monthly'}`,
+            description: `Unlimited bookmarks and premium features - ${isYearly ? 'Annual' : 'Monthly'} billing`,
+          },
+          unit_amount: unitAmount,
+          recurring: {
+            interval: interval,
+          },
+        },
+        quantity: 1,
+      }];
+    }
+
+    const session = await stripe.checkout.sessions.create(base);
 
     return NextResponse.json({ url: session.url });
   } catch (error) {

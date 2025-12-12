@@ -4,9 +4,11 @@ import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
 import { Input } from "../components/ui/input";
+import { AnimatedButton } from "../components/ui/animated-button";
 import { MapPin, Zap, Bot, Tag, Search } from "lucide-react";
 import { useState } from "react"; // useEffect temporarily unused
 import { useAuth } from "../src/hooks/useAuth";
+import { getAppUrl, getSiteUrl } from "../lib/urls";
 
 const Hero = () => {
   const [url, setUrl] = useState("");
@@ -22,12 +24,12 @@ const Hero = () => {
       // Store URL in sessionStorage and redirect to auth
       sessionStorage.setItem('pendingBookmarkUrl', url);
       console.log('🔄 Redirection vers /auth (pas connecté)');
-      window.location.href = '/auth';
+      window.location.href = getSiteUrl('/auth');
     } else {
       // User is logged in, redirect to app with URL
       sessionStorage.setItem('pendingBookmarkUrl', url);
       console.log('🔄 Redirection vers /app (connecté)');
-      window.location.href = '/app';
+      window.location.href = getAppUrl('/');
     }
   };
 
@@ -122,9 +124,13 @@ const Hero = () => {
               </div>
             </div>
 
-            <Button size="lg" className="w-full lg:w-auto" onClick={() => window.location.href = '/auth'}>
-              Get started
-            </Button>
+            <AnimatedButton 
+              onClick={() => window.location.href = getSiteUrl('/auth')}
+              className="w-full lg:w-auto"
+              width="180px"
+              height="48px"
+              fontSize="1.1rem"
+            />
           </div>
 
           {/* Right Column - Demo Card */}
@@ -170,7 +176,7 @@ const Hero = () => {
             </Card>
             
             <Card className="p-0 bg-muted/50 aspect-video overflow-hidden">
-              <video className="w-full h-full" controls autoPlay muted playsInline>
+              <video className="w-full h-full" controls autoPlay muted playsInline loop>
                 <source src="/landingpage.mp4" type="video/mp4" />
                 Your browser does not support the video tag.
               </video>

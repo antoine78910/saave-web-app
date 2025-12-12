@@ -36,6 +36,39 @@ export const sendNotification = inngest.createFunction(
   }
 );
 
+// Function to track errors and bugs
+export const trackError = inngest.createFunction(
+  { id: 'track-error' },
+  { event: 'error/track' },
+  async ({ event, step }) => {
+    console.log('🐛 Tracking error:', event.data);
+    
+    const result = await step.run('track-error-step', async () => {
+      // Log error details
+      const { error, url, userId, context, userAgent, environment } = event.data;
+      
+      console.error('❌ Error tracked:', {
+        error,
+        url,
+        userId,
+        context,
+        userAgent,
+        environment,
+        timestamp: new Date().toISOString(),
+      });
+      
+      // Here you could:
+      // - Send to error tracking service (Sentry, LogRocket, etc.)
+      // - Store in database
+      // - Send alert notifications
+      
+      return { success: true, errorId: Date.now().toString() };
+    });
+    
+    return result;
+  }
+);
+
 // Export all functions as an array for the serve handler
 export const inngestFunctions = [
   processBookmark,

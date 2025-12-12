@@ -1,5 +1,6 @@
 // État de l'application
 let currentState = 'idle'; // idle, loading, success, error
+let autoTriggered = false; // pour déclencher automatiquement la sauvegarde
 
 // Connexion avec le background script
 const backgroundPort = chrome.runtime.connect({ name: 'popup' });
@@ -10,9 +11,9 @@ const statusText = document.getElementById('status-text');
 const statusSubtitle = document.getElementById('status-subtitle');
 const saveButton = document.getElementById('save-button');
 const errorMessage = document.getElementById('error-message');
-const pageInfo = document.getElementById('page-info');
-const pageUrl = document.getElementById('page-url');
-const pageTitle = document.getElementById('page-title');
+const statusSpinner = document.getElementById('status-spinner');
+const progressBar = document.getElementById('progress');
+const toast = document.getElementById('toast');
 
 
 // Initialisation au chargement
@@ -20,12 +21,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   console.log('🎯 Popup Saave initialisé');
   
   try {
+    // Afficher le loader immédiatement à l'ouverture
+    startSaving();
+
     // Récupérer les informations de la page active
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     
     if (tab && tab.url && !tab.url.startsWith('chrome://')) {
-      displayPageInfo(tab.url, tab.title);
       saveButton.disabled = false;
+      // Déclencher automatiquement la sauvegarde comme un favori
+      if (!autoTriggered) {
+        autoTriggered = true;
+        console.log('⚡ [POPUP] Auto-start saving on open');
+        setTimeout(() => saveButton.click(), 0);
+      }
     } else {
       showError('Cette page ne peut pas être sauvegardée');
       saveButton.disabled = true;
@@ -65,7 +74,7 @@ if (saveButton) {
         // Si c'est un doublon, afficher l'erreur immédiatement
         if (response && response.error === 'duplicate') {
           console.log('⚠️ [POPUP] Doublon détecté');
-          showError('Ce site est déjà dans votre bibliothèque');
+          showDuplicate();
         }
       }).catch((err) => {
         console.log('⚠️ [POPUP] Erreur message:', err);
@@ -95,7 +104,11 @@ backgroundPort.onMessage.addListener((message) => {
   
   switch (message.type) {
     case 'error':
-      showError(message.error);
+      if (message.error === 'duplicate') {
+        showDuplicate();
+      } else {
+        showError(message.error);
+      }
       break;
     case 'success':
       showSuccess();
@@ -104,11 +117,8 @@ backgroundPort.onMessage.addListener((message) => {
       handleStepUpdate(message.step);
       break;
     case 'progress':
-      // Étape de progression depuis l'app (metadata = étape 2)
       if (message.step === 'metadata') {
         showSuccess();
-      } else {
-        updateProgress(message.step);
       }
       break;
   }
@@ -121,11 +131,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message && typeof message === 'object' && message.type) {
     switch (message.type) {
       case 'progress':
-        // Étape de progression depuis l'app (metadata = étape 2)
         if (message.step === 'metadata') {
           showSuccess();
-        } else {
-          updateProgress(message.step);
         }
         break;
       case 'stepUpdate':
@@ -145,31 +152,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // Gérer les mises à jour d'étape
 function handleStepUpdate(step) {
-  if (step === 'started') {
-    // Garder l'état loading, on attend l'étape metadata
-    updateProgress('scraping');
-  }
-}
-
-// Mettre à jour la progression
-function updateProgress(step) {
-  if (currentState !== 'loading') return;
-  
-  const stepMessages = {
-    'scraping': { text: 'Analyse de la page…', subtitle: 'Extraction du contenu' },
-    'metadata': { text: 'Bookmark ajouté ✓', subtitle: 'Traitement en cours' },
-    'screenshot': { text: 'Capture d\'écran…', subtitle: 'Génération de l\'aperçu' },
-  };
-  
-  const stepInfo = stepMessages[step] || { text: 'Traitement…', subtitle: 'Envoi vers Saave.io' };
-  
-  if (statusText) statusText.textContent = stepInfo.text;
-  if (statusSubtitle) statusSubtitle.textContent = stepInfo.subtitle;
-  
-  // Si on arrive à metadata, on considère que c'est ajouté
-  if (step === 'metadata') {
-    showSuccess();
-  }
+  updateProgress(step);
 }
 
 // Gérer la déconnexion
@@ -194,18 +177,52 @@ function startSaving() {
   console.log('🎬 [POPUP] startSaving() appelé');
   currentState = 'loading';
   
-  if (statusIcon) statusIcon.innerHTML = '<div class="spinner"></div>';
+  if (toast) {
+    toast.classList.remove('success', 'error');
+    toast.classList.add('loading');
+  }
+  if (progressBar) {
+    progressBar.style.width = '34%';
+    progressBar.style.background = 'var(--accent)';
+  }
+  if (statusSpinner) statusSpinner.style.display = 'inline-block';
+  if (statusIcon) statusIcon.style.display = 'none';
   if (statusText) statusText.textContent = 'Saving page…';
-  if (statusSubtitle) statusSubtitle.textContent = 'Envoi vers Saave.io';
+  if (statusSubtitle) statusSubtitle.textContent = '';
   
   if (saveButton) {
     saveButton.disabled = true;
-    saveButton.textContent = 'Saving…';
+    saveButton.textContent = 'Sauvegarde…';
   }
   
   if (errorMessage) errorMessage.style.display = 'none';
   
   console.log('✅ [POPUP] startSaving() terminé');
+}
+
+// Mettre à jour la progression
+function updateProgress(step) {
+  if (currentState !== 'loading') return;
+  
+  const stepMessages = {
+    'scraping': { text: 'Saving page…', subtitle: '' },
+    'metadata': { text: 'Bookmark saved', subtitle: '' },
+    'screenshot': { text: 'Saving page…', subtitle: '' },
+  };
+  const stepProgress = { scraping: 55, screenshot: 72, metadata: 100 };
+  const stepInfo = stepMessages[step] || { text: 'Saving page…', subtitle: '' };
+  
+  if (statusText) statusText.textContent = stepInfo.text;
+  if (statusSubtitle) statusSubtitle.textContent = stepInfo.subtitle;
+  if (progressBar) {
+    const width = stepProgress[step] ?? 42;
+    progressBar.style.width = `${width}%`;
+  }
+  
+  // Si on arrive à metadata, on considère que c'est ajouté
+  if (step === 'metadata') {
+    showSuccess();
+  }
 }
 
 
@@ -215,14 +232,25 @@ function showSuccess() {
   if (currentState === 'success') return; // Déjà en succès
   
   currentState = 'success';
-  
-  statusIcon.innerHTML = '✅';
-  statusText.textContent = 'Bookmark ajouté ✓';
-  statusSubtitle.textContent = 'Traitement en cours dans Saave.io';
+
+  if (toast) {
+    toast.classList.remove('loading', 'error');
+    toast.classList.add('success');
+  }
+  if (progressBar) {
+    progressBar.style.width = '100%';
+    progressBar.style.background = 'var(--success)';
+  }
+  statusIcon.textContent = '✓';
+  if (statusIcon) statusIcon.style.display = 'inline-flex';
+  if (statusSpinner) statusSpinner.style.display = 'none';
+  statusText.textContent = 'Bookmark saved';
+  statusSubtitle.textContent = '';
   
   if (saveButton) {
     saveButton.textContent = 'Ajouté ✓';
-    saveButton.style.background = '#10b981';
+    saveButton.style.background = 'linear-gradient(120deg, rgba(34,197,94,0.18), rgba(34,197,94,0.28))';
+    saveButton.style.borderColor = 'rgba(34,197,94,0.45)';
     saveButton.disabled = false;
   }
   
@@ -238,9 +266,17 @@ function showSuccess() {
 function showError(error) {
   currentState = 'error';
   
-  statusIcon.innerHTML = '❌';
-  statusText.textContent = 'Erreur';
-  statusSubtitle.textContent = 'Impossible de sauvegarder';
+  if (toast) {
+    toast.classList.remove('loading', 'success');
+    toast.classList.add('error');
+  }
+  if (progressBar) {
+    progressBar.style.width = '100%';
+    progressBar.style.background = 'var(--error)';
+  }
+  statusIcon.textContent = '!';
+  statusText.textContent = 'Error';
+  statusSubtitle.textContent = '';
   
   saveButton.disabled = false;
   saveButton.textContent = 'Réessayer';
@@ -248,6 +284,38 @@ function showError(error) {
   
   errorMessage.textContent = error;
   errorMessage.style.display = 'block';
+}
+
+// Afficher un doublon (traité comme succès silencieux)
+function showDuplicate() {
+  currentState = 'success';
+  
+  if (toast) {
+    toast.classList.remove('loading', 'error');
+    toast.classList.add('success');
+  }
+  if (progressBar) {
+    progressBar.style.width = '100%';
+    progressBar.style.background = 'var(--success)';
+  }
+  statusIcon.textContent = '✓';
+  if (statusIcon) statusIcon.style.display = 'inline-flex';
+  if (statusSpinner) statusSpinner.style.display = 'none';
+  statusText.textContent = 'Already saved';
+  statusSubtitle.textContent = '';
+  
+  if (saveButton) {
+    saveButton.textContent = 'Déjà ajouté';
+    saveButton.style.background = 'linear-gradient(120deg, rgba(34,197,94,0.18), rgba(34,197,94,0.28))';
+    saveButton.style.borderColor = 'rgba(34,197,94,0.45)';
+    saveButton.disabled = false;
+  }
+  
+  if (errorMessage) errorMessage.style.display = 'none';
+  
+  setTimeout(() => {
+    window.close();
+  }, 2000);
 }
 
 // Gestion des raccourcis clavier

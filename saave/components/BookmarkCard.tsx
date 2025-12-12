@@ -8,9 +8,10 @@ export interface BookmarkCardProps {
   onRetry?: (bookmark: Bookmark) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
   onDelete?: (bookmark: Bookmark) => void;
+  isDeleting?: boolean;
 }
 
-export function BookmarkCard({ bookmark, onClick, onRetry, onContextMenu, onDelete }: BookmarkCardProps) {
+export function BookmarkCard({ bookmark, onClick, onRetry, onContextMenu, onDelete, isDeleting = false }: BookmarkCardProps) {
   const domain = bookmark.url ? new URL(bookmark.url).hostname.replace('www.', '') : '';
 
   const handleClick = () => {
@@ -55,7 +56,20 @@ export function BookmarkCard({ bookmark, onClick, onRetry, onContextMenu, onDele
                 title={bookmark.title}
                 favicon={bookmark.favicon}
                 thumbnail={bookmark.thumbnail}
-                onCancel={() => handleDelete({ preventDefault: () => {}, stopPropagation: () => {} } as React.MouseEvent)}
+                onCancel={async () => {
+                  const processingId = (bookmark as any).processingId || bookmark.id;
+                  try {
+                    const res = await fetch('/api/bookmarks/process/cancel', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ id: processingId })
+                    });
+                    if (!res.ok) throw new Error('cancel_failed');
+                    // Optimistic: immediately remove from UI (by id and url)
+                    const ev = new CustomEvent('saave:cancel-processing', { detail: { processingId, url: bookmark.url } });
+                    window.dispatchEvent(ev);
+                  } catch {}
+                }}
               />
             </div>
           ) : (
@@ -68,7 +82,19 @@ export function BookmarkCard({ bookmark, onClick, onRetry, onContextMenu, onDele
                 title={bookmark.title}
                 favicon={bookmark.favicon}
                 thumbnail={bookmark.thumbnail}
-                onCancel={() => handleDelete({ preventDefault: () => {}, stopPropagation: () => {} } as React.MouseEvent)}
+                onCancel={async () => {
+                  try {
+                    const res = await fetch('/api/bookmarks/process/cancel', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ id: (bookmark as any).processingId || bookmark.id })
+                    })
+                    if (!res.ok) throw new Error('cancel_failed')
+                    // Optimistic: immediately remove from UI
+                    const ev = new CustomEvent('saave:cancel-processing', { detail: { processingId: (bookmark as any).processingId || bookmark.id } });
+                    window.dispatchEvent(ev);
+                  } catch {}
+                }}
               />
             </div>
           )}
@@ -131,16 +157,31 @@ export function BookmarkCard({ bookmark, onClick, onRetry, onContextMenu, onDele
         <button
           onClick={(e) => {
             e.stopPropagation();
-            if (onDelete) onDelete(bookmark);
+            if (onDelete && !isDeleting) onDelete(bookmark);
           }}
-          className="absolute top-2 left-2 bg-black/40 hover:bg-red-600/60 text-white rounded-full p-1 opacity-0 group-hover:opacity-80 hover:opacity-100 transition-all duration-200 z-10"
+          className={`absolute top-2 left-2 bg-black/50 text-white rounded-full p-1 transition-all duration-200 z-10
+            ${isDeleting ? 'opacity-90 cursor-not-allowed' : 'opacity-0 group-hover:opacity-80 hover:bg-red-600/60 hover:opacity-100'}`}
+          disabled={isDeleting}
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 6h18"></path>
-            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
-            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
-          </svg>
+          {isDeleting ? (
+            <span className="inline-block w-3 h-3 rounded-full border border-white/60 border-t-transparent animate-spin" />
+          ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 6h18"></path>
+              <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+              <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+            </svg>
+          )}
         </button>
+
+        {isDeleting && (
+          <div className="absolute inset-0 bg-black/45 backdrop-blur-[1px] flex items-center justify-center z-20">
+            <div className="px-3 py-2 rounded-md bg-white/5 border border-white/10 text-xs text-white flex items-center gap-2 shadow-lg">
+              <span className="inline-block w-3.5 h-3.5 rounded-full border border-white/70 border-t-transparent animate-spin" />
+              <span>Deleting…</span>
+            </div>
+          </div>
+        )}
         
         {/* External link button - top right */}
         <button
@@ -156,7 +197,7 @@ export function BookmarkCard({ bookmark, onClick, onRetry, onContextMenu, onDele
           </svg>
         </button>
       </div>
-      <div className="p-3 h-24 flex flex-col justify-between">
+      <div className="p-3 pb-4 h-24 flex flex-col justify-between">
         <div>
           <div className="flex items-center gap-2 mb-1">
             {bookmark.favicon && (
@@ -170,15 +211,13 @@ export function BookmarkCard({ bookmark, onClick, onRetry, onContextMenu, onDele
                 />
               </div>
             )}
-            <h3 className="font-semibold text-base truncate flex-1">{bookmark.title}</h3>
+            <h3 className="font-semibold text-sm leading-5 text-white line-clamp-1 flex-1">{bookmark.title}</h3>
           </div>
-          <div className={`text-muted-foreground line-clamp-2 ${
-            bookmark.description && bookmark.description.length > 80 
-              ? 'text-xs' 
-              : 'text-sm'
-          }`}>{bookmark.description}</div>
+          <div className="text-gray-300 text-xs leading-5 line-clamp-2">
+            {bookmark.description || bookmark.url}
+          </div>
         </div>
-        <div className="flex items-center justify-between text-xs text-gray-400 mt-1">
+        <div className="flex items-center justify-between text-xs text-gray-400 mt-0">
           <span className="truncate">{domain}</span>
           {bookmark.category && (
             <div 

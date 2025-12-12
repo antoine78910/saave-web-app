@@ -18,52 +18,38 @@ export async function POST(req) {
   try {
     console.log('📸 Prise de screenshot RÉEL pour:', url);
 
-    function resolveLocalChromeExecutable() {
-      const envPaths = [
-        process.env.PUPPETEER_EXECUTABLE_PATH,
-        process.env.CHROME_EXECUTABLE_PATH,
-        process.env.CHROME_PATH,
-      ].filter(Boolean);
-      const candidatePaths = [
-        ...envPaths,
-        // Google Chrome
-        'C://Program Files//Google//Chrome//Application//chrome.exe',
-        'C://Program Files (x86)//Google//Chrome//Application//chrome.exe',
-        // Microsoft Edge
-        'C://Program Files//Microsoft//Edge//Application//msedge.exe',
-        'C://Program Files (x86)//Microsoft//Edge//Application//msedge.exe',
-        // Brave
-        'C://Program Files//BraveSoftware//Brave-Browser//Application//brave.exe',
-        'C://Program Files (x86)//BraveSoftware//Brave-Browser//Application//brave.exe',
-      ];
-      for (const candidate of candidatePaths) {
-        try {
-          if (candidate && fs.existsSync(candidate)) return candidate;
-        } catch {}
-      }
-      return null;
-    }
-
   let browser = null;
 
-  // Prefer full puppeteer in dev/Windows when available (downloads a local Chromium)
-  // IMPORTANT: Always use bundled Chromium, never user's Chrome to avoid closing their browser
+  // IMPORTANT: Always use bundled Chromium from puppeteer, NEVER user's Chrome
+  // This prevents closing the user's browser window
   if (process.env.VERCEL !== '1' && (process.env.NODE_ENV !== 'production' || process.platform === 'win32')) {
     try {
       const mod = await import('puppeteer');
       const puppeteer = mod.default || mod;
       const execPath = typeof puppeteer.executablePath === 'function' ? await Promise.resolve(puppeteer.executablePath()) : undefined;
-      // Always use bundled Chromium, never system Chrome
+      
+      // Verify it's the bundled Chromium, not system Chrome
+      if (execPath && !execPath.includes('.cache\\puppeteer') && !execPath.includes('.cache/puppeteer') && !execPath.includes('node_modules')) {
+        console.warn('⚠️ WARNING: executablePath might be system Chrome, forcing bundled Chromium');
+        // Force bundled Chromium by not specifying executablePath
       browser = await puppeteer.launch({
         headless: 'new',
-        executablePath: execPath, // This is the bundled Chromium, not user's Chrome
+          // Don't specify executablePath - let puppeteer use its bundled Chromium
         pipe: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--remote-debugging-pipe'],
-      });
+          args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--remote-debugging-port=0'], // Use random port, not pipe
+        });
+      } else {
+        // Use bundled Chromium
+        browser = await puppeteer.launch({
+          headless: 'new',
+          executablePath: execPath, // This is the bundled Chromium
+          pipe: true,
+          args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--remote-debugging-port=0'], // Use random port, not pipe
+        });
+      }
       console.log('🚀 Launched puppeteer (bundled Chromium) at', execPath);
     } catch (e) {
       console.warn('⚠️ puppeteer not available, using @sparticuz/chromium instead:', e?.message);
-      // Don't use system Chrome - use @sparticuz/chromium instead
     }
   }
 
@@ -71,7 +57,7 @@ export async function POST(req) {
     const executablePath = (await chromium.executablePath()) || '/usr/bin/chromium';
     console.log('ℹ️ Using @sparticuz/chromium at', executablePath, 'on', process.platform);
     browser = await puppeteerCore.launch({
-      args: [...(chromium.addArguments ? chromium.addArguments([]) : (chromium.args || [])), '--no-sandbox', '--disable-setuid-sandbox', '--hide-scrollbars', '--remote-debugging-pipe'],
+      args: [...(chromium.addArguments ? chromium.addArguments([]) : (chromium.args || [])), '--no-sandbox', '--disable-setuid-sandbox', '--hide-scrollbars', '--remote-debugging-port=0'], // Use random port
       defaultViewport: chromium.defaultViewport || { width: 1280, height: 720 },
       executablePath,
       headless: chromium.headless !== false,

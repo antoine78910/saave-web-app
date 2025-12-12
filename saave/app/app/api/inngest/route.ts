@@ -1,6 +1,6 @@
 import { serve } from 'inngest/next';
 import { inngest } from '@/lib/inngest';
-import { processBookmark, sendNotification } from '@/lib/inngest-functions';
+import { processBookmark, sendNotification, trackError } from '@/lib/inngest-functions';
 
 // Create the Inngest serve handler with all functions
 export const { GET, POST, PUT } = serve({
@@ -8,6 +8,7 @@ export const { GET, POST, PUT } = serve({
   functions: [
     processBookmark,
     sendNotification,
+    trackError,
   ],
   signingKey: process.env.INNGEST_SIGNING_KEY,
 });

@@ -20,6 +20,8 @@ export default function AuthPage() {
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [emailTouched, setEmailTouched] = useState(false);
+  const [passwordTouched, setPasswordTouched] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [isSignIn, setIsSignIn] = useState(true);
@@ -42,7 +44,7 @@ export default function AuthPage() {
       supabase.auth
         .setSession({ access_token, refresh_token })
         .then(({ data, error }) => {
-          console.log('📡 AUTH PAGE: setSession result:', { hasSession: !!data.session, error });
+          console.log('📡 AUTH PAGE: setSession result:', { hasSession: !!data?.session, error });
           if (error) {
             console.error('❌ AUTH PAGE: setSession error:', error);
             return;
@@ -91,6 +93,13 @@ export default function AuthPage() {
     setToasts(prev => prev.filter(toast => toast.id !== id));
   };
 
+  const isValidEmail = (v: string) => /\S+@\S+\.\S+/.test(v);
+  const canSubmit = () => {
+    const okEmail = isValidEmail(email);
+    const okPassword = password.length >= 6;
+    return okEmail && okPassword && !isLoading;
+  };
+
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     console.log('🚀 AUTH: Début de l\'authentification', { isSignIn, email: email.substring(0, 5) + '...' });
@@ -126,7 +135,7 @@ export default function AuthPage() {
             sessionId: data.session.access_token.substring(0, 20) + '...'
           });
           
-          showToast('Welcome back! Redirecting...', 'success');
+          showToast('Welcome back! Redirecting…', 'success');
           
           // Attendre un peu pour que la session soit bien établie
           setTimeout(() => {
@@ -177,7 +186,7 @@ export default function AuthPage() {
     setAuthError(null);
 
     try {
-      const redirectUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? window.location.origin}/auth/callback`;
+      const redirectUrl = `${window.location.origin}/auth/callback`;
       console.log('🔗 AUTH PAGE: URL de redirection:', redirectUrl);
       
       console.log('🔧 AUTH PAGE: Configuration Supabase:', {
@@ -212,7 +221,7 @@ export default function AuthPage() {
   return (
     <>
       <div className="min-h-screen bg-[#121212] flex items-center justify-center">
-        <div className="max-w-md w-full bg-[#1c1c1c] p-8 rounded-lg shadow-lg">
+        <div className=" max-w-md w-full bg-[#1c1c1c] p-8 rounded-lg shadow-lg">
           <div className="flex justify-center mb-4">
             <div className="relative h-32 w-48">
               <Image
@@ -253,7 +262,7 @@ export default function AuthPage() {
               Continue with Google
             </span>
           </button>
-          <div className="relative">
+          <div className="relative mb-1">
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-accent"></div>
             </div>
@@ -277,92 +286,56 @@ export default function AuthPage() {
               Sign Up
             </button>
           </div>
-          <h2 className="mt-6 text-lg font-medium text-white">
-            {isSignIn ? "Sign in to your account" : "Create a new account"}
-          </h2>
-          <p className="text-sm text-gray-400">
-            {isSignIn ? "Enter your email and password to access your bookmarks" : "Sign up to start using Saave"}
-          </p>
-          <form className="mt-8 space-y-6" onSubmit={handleAuth}>
-            <div className="space-y-4">
-              <div>
-                <label htmlFor="email" className="block text-sm font-medium text-gray-400">Email</label>
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  autoComplete="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="mt-1 block w-full px-3 py-2 bg-[#2c2c2c] border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent transition-colors duration-150"
-                  placeholder="me@example.com"
-                />
-              </div>
-              <div>
-                <div className="flex justify-between">
-                  <label htmlFor="password" className="block text-sm font-medium text-gray-400">Password</label>
-                  {isSignIn && (
-                    <a href="#" className="text-xs text-gray-400 hover:text-white">
-                      Forgot your password?
-                    </a>
-                  )}
-                </div>
-                <div className="relative">
-    <input
-      id="password"
-      name="password"
-      type={showPassword ? "text" : "password"}
-      autoComplete={isSignIn ? "current-password" : "new-password"}
-      required
-      value={password}
-      onChange={(e) => setPassword(e.target.value)}
-      className="mt-1 block w-full px-3 py-2 bg-[#2c2c2c] border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent transition-colors duration-150 pr-10"
-      placeholder="••••••••"
-    />
-    <button
-      type="button"
-      tabIndex={-1}
-      onClick={() => setShowPassword((v) => !v)}
-      className="absolute inset-y-0 right-0 flex items-center px-3 text-gray-400 focus:outline-none"
-      aria-label={showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}
-    >
-      {showPassword ? (
-        // Icône œil barré classique
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223C5.684 6.165 8.642 3.75 12 3.75c3.358 0 6.316 2.415 8.02 4.473a3.375 3.375 0 010 4.554C18.316 17.835 15.358 20.25 12 20.25c-3.358 0-6.316-2.415-8.02-4.473a3.375 3.375 0 010-4.554z" />
-          <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          <path strokeLinecap="round" strokeLinejoin="round" d="M3 3l18 18" />
-        </svg>
-      ) : (
-        // Icône œil classique
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223C5.684 6.165 8.642 3.75 12 3.75c3.358 0 6.316 2.415 8.02 4.473a3.375 3.375 0 010 4.554C18.316 17.835 15.358 20.25 12 20.25c-3.358 0-6.316-2.415-8.02-4.473a3.375 3.375 0 010-4.554z" />
-          <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-        </svg>
-      )}
-    </button>
-  </div>
-              </div>
+          <div className="space-y-2 mt-6">
+            <label htmlFor="email" className="block text-sm font-medium text-gray-400">Email</label>
+            <input
+              id="email"
+              name="email"
+              type="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              onBlur={() => setEmailTouched(true)}
+              className={`mt-1 block w-full px-3 py-2 bg-[#2c2c2c] border ${emailTouched ? 'border-accent' : 'border-gray-600'} rounded-md text-white focus:outline-none focus:ring-2 focus:ring-accent`}
+              placeholder="me@example.com"
+            />
+          </div>
+          <div className="space-y-2 mt-3">
+            <label htmlFor="password" className="block text-sm font-medium text-gray-400">Password</label>
+            <div className="relative">
+              <input
+                id="password"
+                name="password"
+                type={showPassword ? "text" : "password"}
+                autoComplete={isSignIn ? "current-password" : "new-password"}
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                onBlur={() => setPasswordTouched(true)}
+                className="mt-1 block w-full px-3 py-2 bg-[#2c2c2c] border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-accent"
+                placeholder="••••••••"
+              />
             </div>
-            {authError && (
-              <div className="text-red-500 text-sm">{authError}</div>
-            )}
-            <div>
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-accent hover:bg-accent/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-accent"
-              >
-                {isLoading ? "Processing..." : isSignIn ? "Sign In" : "Sign Up"}
-              </button>
-            </div>
-          </form>
+          </div>
+          {authError && (
+            <div className="text-red-500 text-sm mt-2">{authError}</div>
+          )}
+          <div className="mt-4">
+            <button
+              type="submit"
+              disabled={!canSubmit()}
+              className="group relative w/full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-accent hover:bg-accent/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-accent"
+              onClick={handleAuth}
+            >
+              {isLoading ? "Processing..." : isSignIn ? "Sign In" : "Sign Up"}
+            </button>
+          </div>
         </div>
       </div>
       
       {/* Toast Container */}
-      <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
+      <div className="fixed bottom-4 right-4 z-50 fex flex-col gap-2">
         {toasts.map((toast) => (
           <Toast
             key={toast.id}

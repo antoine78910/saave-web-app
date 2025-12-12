@@ -1,8 +1,10 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { loadStripe } from '@stripe/stripe-js';
 import { useSubscription } from "../../src/hooks/useSubscription";
+import { useAuth } from "../../src/hooks/useAuth";
+import { getAppUrl } from "../../lib/urls";
 
 // Initialiser Stripe 
 // const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!); // Temporarily unused
@@ -10,17 +12,26 @@ import { useSubscription } from "../../src/hooks/useSubscription";
 export default function UpgradePage() {
   const [yearly, setYearly] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const router = useRouter();
-  const userEmail = 'anto.delbos@gmail.com'; // À remplacer par ton système d'auth
+  const { user, loading: authLoading } = useAuth();
+  const userEmail = user?.email || null;
   const { subscription, loading: subscriptionLoading } = useSubscription(userEmail);
 
-  // Si l'utilisateur est déjà Pro, rediriger vers l'app
-  if (subscription?.plan === 'pro') {
-    router.push('/app');
-    return null;
-  }
+  // Si l'utilisateur est déjà Pro, rediriger vers l'app (via effet pour éviter setState pendant render)
+  useEffect(() => {
+    if (subscription?.plan === 'pro') {
+      router.replace(getAppUrl('/'));
+    }
+  }, [subscription?.plan, router]);
 
   const handleUpgrade = async () => {
+    if (!userEmail) {
+      try { if (typeof window !== 'undefined') sessionStorage.setItem('redirectAfterAuth', '/upgrade'); } catch {}
+      router.push('/auth');
+      return;
+    }
     setLoading(true);
     
     try {
@@ -52,6 +63,49 @@ export default function UpgradePage() {
       setLoading(false);
     }
   };
+
+  // Auto-sync after auth return
+  useEffect(() => {
+    if (!userEmail) return;
+    try {
+      const key = 'redirectAfterAuth';
+      const pending = typeof window !== 'undefined' ? sessionStorage.getItem(key) : null;
+      if (pending === '/upgrade') {
+        sessionStorage.removeItem(key);
+        // Trigger sync silently
+        (async () => {
+          setSyncing(true);
+          setSyncMsg('Syncing your plan...');
+          try {
+            const res = await fetch('/api/user/subscription', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: userEmail, plan: 'pro' })
+            });
+            if (!res.ok) {
+              const text = await res.text();
+              setSyncMsg(`Sync failed (${res.status}). ${text || ''}`);
+              setSyncing(false);
+              return;
+            }
+            // Verify server now returns pro
+            const verify = await fetch(`/api/user/subscription?email=${encodeURIComponent(userEmail)}`);
+            const data = await verify.json();
+            if (data?.plan === 'pro' || data?.bookmarkLimit === -1) {
+              setSyncMsg('Plan synced. Redirecting...');
+              router.push(getAppUrl('/'));
+              return;
+            }
+            setSyncMsg('Sync completed, but plan still appears as Free. Please refresh /app.');
+          } catch (e) {
+            setSyncMsg('Sync error. Please retry.');
+          } finally {
+            setSyncing(false);
+          }
+        })();
+      }
+    } catch {}
+  }, [userEmail, router]);
 
   return (
     <div className="min-h-screen bg-[#181a1b] text-white flex flex-col items-center px-4 py-12">
@@ -154,6 +208,49 @@ export default function UpgradePage() {
             >
               {loading ? 'Processing...' : 'Upgrade'}
             </button>
+            <button
+              onClick={async () => {
+                try {
+                  if (!userEmail) {
+                    try { if (typeof window !== 'undefined') sessionStorage.setItem('redirectAfterAuth', '/upgrade'); } catch {}
+                    router.push('/auth');
+                    return;
+                  }
+                  setSyncing(true);
+                  setSyncMsg('Syncing your plan...');
+                  const res = await fetch('/api/user/subscription', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: userEmail, plan: 'pro' })
+                  });
+                  if (!res.ok) {
+                    const text = await res.text();
+                    setSyncMsg(`Sync failed (${res.status}). ${text || ''}`);
+                    setSyncing(false);
+                    return;
+                  }
+                  // Verify server now returns pro
+                  const verify = await fetch(`/api/user/subscription?email=${encodeURIComponent(userEmail)}`);
+                  const data = await verify.json();
+                  if (data?.plan === 'pro' || data?.bookmarkLimit === -1) {
+                    setSyncMsg('Plan synced. Redirecting...');
+                    router.push(getAppUrl('/'));
+                    return;
+                  }
+                  setSyncMsg('Sync completed, but plan still appears as Free. Please refresh /app.');
+                } catch {
+                  setSyncMsg('Sync error. Please retry.');
+                } finally {
+                  setSyncing(false);
+                }
+              }}
+              className="mt-3 w-full px-8 py-2 rounded-md border border-gray-600 text-sm text-gray-300 hover:bg-white/5 transition"
+            >
+              I already upgraded – sync my plan
+            </button>
+            {syncMsg && (
+              <div className="mt-2 text-xs text-gray-400">{syncMsg}</div>
+            )}
           </div>
         </div>
       </div>

@@ -1,11 +1,12 @@
 
 "use client";
 
-import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
+import { AnimatedButton } from "../components/ui/animated-button";
 import { Check } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../src/hooks/useAuth";
+import { getAppUrl } from "../lib/urls";
 
 const Pricing = () => {
   const router = useRouter();
@@ -17,7 +18,7 @@ const Pricing = () => {
     
     if (user) {
       console.log('🔄 Redirection vers /app (connecté)');
-      router.push('/app');
+      router.push(getAppUrl('/'));
     } else {
       console.log('🔄 Redirection vers /auth (pas connecté)');
       router.push('/auth');
@@ -123,14 +124,10 @@ const Pricing = () => {
                   ))}
                 </div>
                 
-                <Button 
+                <AnimatedButton 
                   className="w-full" 
-                  variant={plan.popular ? "default" : "outline"}
-                  size="lg"
                   onClick={plan.action}
-                >
-                  {plan.cta}
-                </Button>
+                />
               </div>
             </Card>
           ))}

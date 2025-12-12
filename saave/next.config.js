@@ -8,6 +8,10 @@ const nextConfig = {
     // Désactiver les erreurs TypeScript pendant le build
     ignoreBuildErrors: true,
   },
+  // Autoriser app.localhost pour le développement
+  async rewrites() {
+    return [];
+  },
   images: {
     remotePatterns: [
       {
