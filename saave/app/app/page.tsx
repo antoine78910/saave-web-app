@@ -488,6 +488,9 @@ export default function AppPage() {
     // Vérifier si l'utilisateur peut ajouter un bookmark
     if (!canAdd) {
       console.log('❌ WEBAPP: Limite atteinte, redirection vers upgrade');
+      try {
+        window.dispatchEvent(new CustomEvent('saave:add-error', { detail: { message: 'limit_reached', url } }));
+      } catch {}
       addToast(
         `You've reached your limit of ${subscription?.bookmarkLimit} bookmarks. Upgrade to Pro for unlimited bookmarks!`, 
         'error', 
@@ -501,6 +504,9 @@ export default function AppPage() {
 
     if (!user?.id) {
       addToast('You must be logged in to add bookmarks', 'error');
+      try {
+        window.dispatchEvent(new CustomEvent('saave:add-error', { detail: { message: 'login_required', url } }));
+      } catch {}
       return;
     }
     try {
@@ -519,6 +525,9 @@ export default function AppPage() {
 
         if (res.status === 409 || data?.duplicate || /duplicate/i.test(text)) {
           addToast('Bookmark already saved', 'success')
+          try {
+            window.dispatchEvent(new CustomEvent('saave:add-error', { detail: { message: 'duplicate', url } }));
+          } catch {}
           return
         }
 
@@ -533,6 +542,9 @@ export default function AppPage() {
     } catch (error: any) {
       console.error('Error starting process:', error)
       addToast(`Failed to start: ${error.message}`, 'error')
+      try {
+        window.dispatchEvent(new CustomEvent('saave:add-error', { detail: { message: error?.message || 'error', url } }));
+      } catch {}
     }
   };
 

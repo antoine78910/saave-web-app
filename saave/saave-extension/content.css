@@ -115,6 +115,40 @@
   line-height: 1.4;
 }
 
+.saave-notification-actions {
+  margin-top: 10px;
+  display: none;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.saave-notification-container.has-actions .saave-notification-actions {
+  display: flex;
+}
+
+.saave-notification-btn {
+  appearance: none;
+  border: 1px solid rgba(16, 185, 129, 0.45);
+  background: rgba(16, 185, 129, 0.12);
+  color: #fafafa;
+  padding: 7px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.saave-notification-btn:hover {
+  background: rgba(16, 185, 129, 0.18);
+}
+
+.saave-notification-btn.secondary {
+  border-color: #27272a;
+  background: rgba(255,255,255,0.06);
+}
+.saave-notification-btn.secondary:hover {
+  background: rgba(255,255,255,0.10);
+}
+
 /* progress bar removed (minimal shadcn-style toast) */
 .saave-notification-progress,
 .saave-notification-progress-bar { display: none !important; }

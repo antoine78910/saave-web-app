@@ -39,6 +39,10 @@
           </div>
           <div class="saave-notification-text">Saving page...</div>
         </div>
+        <div class="saave-notification-actions">
+          <button class="saave-notification-btn" data-saave-action="primary" type="button"></button>
+          <button class="saave-notification-btn secondary" data-saave-action="dismiss" type="button">Dismiss</button>
+        </div>
       </div>
     `;
 
@@ -60,6 +64,8 @@
     const spinner = container.querySelector('.saave-notification-spinner');
     const checkmark = container.querySelector('.saave-notification-checkmark');
     const errorIcon = container.querySelector('.saave-notification-error-icon');
+    const actions = container.querySelector('.saave-notification-actions');
+    const primaryBtn = container.querySelector('[data-saave-action="primary"]');
     const progressBar = null;
 
     console.log('Elements found:', {
@@ -71,12 +77,17 @@
     });
 
     currentState = state;
-    container.classList.remove('hidden', 'success', 'error', 'closing');
+    container.classList.remove('hidden', 'success', 'error', 'closing', 'has-actions');
     console.log('✅ Removed hidden class, notification should be visible now');
     console.log('Container classes:', container.className);
 
     if (textEl) textEl.textContent = text;
     // progress bar removed intentionally (minimal shadcn style)
+    try {
+      if (actions) actions.style.display = 'none';
+      if (primaryBtn) primaryBtn.textContent = '';
+      container.dataset.saavePrimaryTarget = '';
+    } catch {}
 
     if (state === 'loading') {
       console.log('⏳ Setting LOADING state');
@@ -195,6 +206,30 @@
           pendingSuccessTimer = null;
         }
         showNotification(message.text || 'Already saved', 'success', 100);
+      } else if (message.action === 'hide') {
+        hideNotification();
+      } else if (message.action === 'login') {
+        showNotification(message.text || 'Login required', 'error', 100);
+        try {
+          const container = createNotification();
+          const actions = container.querySelector('.saave-notification-actions');
+          const primaryBtn = container.querySelector('[data-saave-action="primary"]');
+          container.classList.add('has-actions');
+          container.dataset.saavePrimaryTarget = message.target || 'login';
+          if (primaryBtn) primaryBtn.textContent = message.buttonText || 'Login';
+          if (actions) actions.style.display = 'flex';
+        } catch {}
+      } else if (message.action === 'upgrade') {
+        showNotification(message.text || 'Upgrade required', 'error', 100);
+        try {
+          const container = createNotification();
+          const actions = container.querySelector('.saave-notification-actions');
+          const primaryBtn = container.querySelector('[data-saave-action="primary"]');
+          container.classList.add('has-actions');
+          container.dataset.saavePrimaryTarget = message.target || 'upgrade';
+          if (primaryBtn) primaryBtn.textContent = message.buttonText || 'Upgrade';
+          if (actions) actions.style.display = 'flex';
+        } catch {}
       }
       sendResponse({ received: true });
       return true;
@@ -232,6 +267,24 @@
       });
     }
   });
+
+  // Click handlers for CTA buttons (login / upgrade)
+  document.addEventListener('click', (e) => {
+    const t = e.target;
+    if (!(t instanceof Element)) return;
+    const btn = t.closest('[data-saave-action]');
+    if (!btn) return;
+    const container = notificationContainer;
+    const action = btn.getAttribute('data-saave-action') || '';
+    if (action === 'dismiss') {
+      hideNotification();
+      return;
+    }
+    if (action === 'primary') {
+      const target = (container && container.dataset && container.dataset.saavePrimaryTarget) ? container.dataset.saavePrimaryTarget : '';
+      try { chrome.runtime.sendMessage({ type: 'saave:open', target }); } catch {}
+    }
+  }, { capture: true });
 
 })();
 

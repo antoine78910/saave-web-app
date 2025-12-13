@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Saave",
-  "version": "1.0.1",
-  "description": "Sauvegarde intelligente de liens.",
+  "version": "1.0.2",
+  "description": "Save any page to Saave in one click.",
   "action": {
     "default_title": "Ajouter à Saave",
     "default_icon": {
@@ -18,33 +18,35 @@
   },
   "permissions": [
     "storage",
-    "tabs",
     "scripting",
     "notifications",
     "activeTab"
   ],
   "host_permissions": [
-    "<all_urls>"
+    "https://saave.io/*",
+    "https://www.saave.io/*",
+    "https://*.saave.io/*"
   ],
-  "externally_connectable": {
-    "matches": [
-      "http://localhost:*/*",
-      "https://saave.io/*",
-      "https://www.saave.io/*",
-      "https://*.saave.io/*"
-    ]
-  },
+  "optional_host_permissions": [
+    "http://localhost:*/*"
+  ],
   "background": {
     "service_worker": "background-sw.js"
   },
   "content_scripts": [
     {
       "matches": [
-        "<all_urls>"
+        "https://saave.io/*",
+        "https://www.saave.io/*",
+        "https://*.saave.io/*"
       ],
       "js": ["content.js"],
       "css": ["content.css"],
       "run_at": "document_start"
     }
-  ]
+  ],
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  }
 }
