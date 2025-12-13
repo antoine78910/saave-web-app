@@ -1,4 +1,5 @@
 import Image from 'next/image';
+import { useEffect, useMemo, useState } from 'react';
 import { Bookmark } from './BookmarkGrid';
 import BookmarkProgressBar, { BookmarkProcessStep } from './BookmarkProgressBar';
 
@@ -13,6 +14,51 @@ export interface BookmarkCardProps {
 
 export function BookmarkCard({ bookmark, onClick, onRetry, onContextMenu, onDelete, isDeleting = false }: BookmarkCardProps) {
   const domain = bookmark.url ? new URL(bookmark.url).hostname.replace('www.', '') : '';
+
+  const isMShots = (src?: string | null) => {
+    if (!src) return false;
+    try {
+      const u = new URL(src);
+      return u.hostname === 's.wordpress.com' && u.pathname.startsWith('/mshots/v1/');
+    } catch {
+      return false;
+    }
+  };
+
+  const withCacheBust = (src: string, bust: number) => {
+    try {
+      const u = new URL(src);
+      u.searchParams.set('cb', String(bust));
+      return u.toString();
+    } catch {
+      // Fallback for non-standard URLs
+      const sep = src.includes('?') ? '&' : '?';
+      return `${src}${sep}cb=${bust}`;
+    }
+  };
+
+  // mShots returns a placeholder first ("Generating Preview...") then updates asynchronously.
+  // Next/Image can cache the placeholder via the optimizer, so we use <img> + cache-bust retries for mShots only.
+  const [mshotsBust, setMshotsBust] = useState<number>(0);
+  useEffect(() => {
+    const src = bookmark.thumbnail || '';
+    if (!isMShots(src)) return;
+    const bump = () => setMshotsBust(Date.now());
+    bump();
+    const t1 = setTimeout(bump, 1500);
+    const t2 = setTimeout(bump, 4000);
+    const t3 = setTimeout(bump, 8000);
+    const t4 = setTimeout(bump, 15000);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(t4); };
+    // Re-run when thumbnail changes or when processing step advances.
+  }, [bookmark.thumbnail, bookmark.processingStep, bookmark.id]);
+
+  const thumbnailSrc = useMemo(() => {
+    const src = bookmark.thumbnail || '';
+    if (!src) return '';
+    if (!isMShots(src)) return src;
+    return withCacheBust(src, mshotsBust || Date.now());
+  }, [bookmark.thumbnail, mshotsBust]);
 
   const handleClick = () => {
     if (bookmark.status === 'error' || bookmark.status === 'loading') return;
@@ -48,7 +94,17 @@ export function BookmarkCard({ bookmark, onClick, onRetry, onContextMenu, onDele
         <div className="aspect-video relative overflow-hidden">
           {showThumbnail && bookmark.thumbnail ? (
             <div className="relative w-full h-full">
-              <Image src={bookmark.thumbnail} alt="Screenshot" fill sizes="(max-width: 768px) 100vw, 33vw" className="object-cover" />
+              {isMShots(bookmark.thumbnail) ? (
+                <img
+                  src={thumbnailSrc}
+                  alt="Screenshot"
+                  className="absolute inset-0 w-full h-full object-cover"
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <Image src={bookmark.thumbnail} alt="Screenshot" fill sizes="(max-width: 768px) 100vw, 33vw" className="object-cover" />
+              )}
               <BookmarkProgressBar
                 currentStep={bookmark.processingStep as BookmarkProcessStep}
                 url={bookmark.url}
@@ -148,7 +204,17 @@ export function BookmarkCard({ bookmark, onClick, onRetry, onContextMenu, onDele
     <div className="bg-[#232526] text-white flex flex-col rounded-xl border border-gray-700 shadow-sm group w-full overflow-hidden p-0" onClick={handleClick} onContextMenu={handleContextMenu}>
       <div className="aspect-video relative overflow-hidden">
         {bookmark.thumbnail ? (
-          <Image src={bookmark.thumbnail} alt={bookmark.title || "Thumbnail"} fill sizes="(max-width: 768px) 100vw, 33vw" className="object-cover transition-all group-hover:scale-105" />
+          isMShots(bookmark.thumbnail) ? (
+            <img
+              src={thumbnailSrc}
+              alt={bookmark.title || "Thumbnail"}
+              className="absolute inset-0 w-full h-full object-cover transition-all group-hover:scale-105"
+              loading="lazy"
+              referrerPolicy="no-referrer"
+            />
+          ) : (
+            <Image src={bookmark.thumbnail} alt={bookmark.title || "Thumbnail"} fill sizes="(max-width: 768px) 100vw, 33vw" className="object-cover transition-all group-hover:scale-105" />
+          )
         ) : (
           <div className="w-full h-full bg-[#1a1a1a]" />
         )}

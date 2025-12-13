@@ -8,6 +8,29 @@ interface BookmarkPopupProps {
 }
 
 export default function BookmarkPopup({ bookmark, onClose }: BookmarkPopupProps) {
+  const isMShots = (src?: string | null) => {
+    if (!src) return false;
+    try {
+      const u = new URL(src);
+      return u.hostname === 's.wordpress.com' && u.pathname.startsWith('/mshots/v1/');
+    } catch {
+      return false;
+    }
+  };
+
+  const mshotsSrc = React.useMemo(() => {
+    if (!bookmark.thumbnail) return null;
+    if (!isMShots(bookmark.thumbnail)) return bookmark.thumbnail;
+    try {
+      const u = new URL(bookmark.thumbnail);
+      u.searchParams.set('cb', String(Date.now()));
+      return u.toString();
+    } catch {
+      const sep = bookmark.thumbnail.includes('?') ? '&' : '?';
+      return `${bookmark.thumbnail}${sep}cb=${Date.now()}`;
+    }
+  }, [bookmark.thumbnail]);
+
   return (
     <div 
       className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm" 
@@ -67,16 +90,26 @@ export default function BookmarkPopup({ bookmark, onClose }: BookmarkPopupProps)
             </div>
             {/* Screenshot prend toute la largeur en 16:9 */}
             <div className="relative w-full bg-[#1a1a1a] overflow-hidden" style={{ aspectRatio: '16/9' }}>
-              <Image 
-                src={bookmark.thumbnail} 
-                alt={bookmark.title} 
-                fill 
-                className="object-cover"
-                sizes="(max-width: 768px) 100vw, 800px"
-              />
+              {isMShots(bookmark.thumbnail) ? (
+                <img
+                  src={mshotsSrc || bookmark.thumbnail}
+                  alt={bookmark.title}
+                  className="absolute inset-0 w-full h-full object-cover"
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <Image 
+                  src={bookmark.thumbnail} 
+                  alt={bookmark.title} 
+                  fill 
+                  className="object-cover"
+                  sizes="(max-width: 768px) 100vw, 800px"
+                />
+              )}
               {/* Overlay pour voir le screenshot en grand au clic */}
               <button 
-                onClick={() => window.open(bookmark.thumbnail!, '_blank')}
+                onClick={() => window.open((mshotsSrc || bookmark.thumbnail)!, '_blank')}
                 className="absolute inset-0 bg-black/0 hover:bg-black/20 transition-colors flex items-center justify-center group"
               >
                 <div className="bg-black/60 text-white p-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
