@@ -147,13 +147,14 @@ export async function POST(req) {
     // Don't fail the whole bookmark pipeline: return a remote screenshot URL fallback.
     const msg = (e && e.message) ? e.message : String(e || 'unknown_error');
     console.error('❌ Erreur screenshot:', e);
-    const fallbackUrl = `https://s.wordpress.com/mshots/v1/${encodeURIComponent(String(url))}?w=1280`;
+    // mShots can get stuck on "Generating Preview..." for some domains, so prefer thum.io as a more stable fallback.
+    const fallbackUrl = `https://image.thum.io/get/width/1280/crop/720/noanimate/${encodeURIComponent(String(url))}`;
     console.warn('🟡 Screenshot fallback used:', { fallbackUrl, error: msg });
     return NextResponse.json({
       success: true,
       filename,
       url: fallbackUrl,
-      source: 'mshots-fallback',
+      source: 'thumio-fallback',
       warning: 'chromium_unavailable',
     }, { status: 200 });
   }

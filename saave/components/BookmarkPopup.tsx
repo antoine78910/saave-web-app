@@ -18,18 +18,15 @@ export default function BookmarkPopup({ bookmark, onClose }: BookmarkPopupProps)
     }
   };
 
-  const mshotsSrc = React.useMemo(() => {
+  const thumIoFromPageUrl = (pageUrl: string) =>
+    `https://image.thum.io/get/width/1280/crop/720/noanimate/${encodeURIComponent(pageUrl)}`;
+
+  const previewSrc = React.useMemo(() => {
     if (!bookmark.thumbnail) return null;
     if (!isMShots(bookmark.thumbnail)) return bookmark.thumbnail;
-    try {
-      const u = new URL(bookmark.thumbnail);
-      u.searchParams.set('cb', String(Date.now()));
-      return u.toString();
-    } catch {
-      const sep = bookmark.thumbnail.includes('?') ? '&' : '?';
-      return `${bookmark.thumbnail}${sep}cb=${Date.now()}`;
-    }
-  }, [bookmark.thumbnail]);
+    // Avoid mShots "Generating Preview..." placeholders by switching to thum.io for display.
+    return thumIoFromPageUrl(bookmark.url);
+  }, [bookmark.thumbnail, bookmark.url]);
 
   return (
     <div 
@@ -92,7 +89,7 @@ export default function BookmarkPopup({ bookmark, onClose }: BookmarkPopupProps)
             <div className="relative w-full bg-[#1a1a1a] overflow-hidden" style={{ aspectRatio: '16/9' }}>
               {isMShots(bookmark.thumbnail) ? (
                 <img
-                  src={mshotsSrc || bookmark.thumbnail}
+                  src={previewSrc || bookmark.thumbnail}
                   alt={bookmark.title}
                   className="absolute inset-0 w-full h-full object-cover"
                   loading="lazy"
@@ -109,7 +106,7 @@ export default function BookmarkPopup({ bookmark, onClose }: BookmarkPopupProps)
               )}
               {/* Overlay pour voir le screenshot en grand au clic */}
               <button 
-                onClick={() => window.open((mshotsSrc || bookmark.thumbnail)!, '_blank')}
+                onClick={() => window.open((previewSrc || bookmark.thumbnail)!, '_blank')}
                 className="absolute inset-0 bg-black/0 hover:bg-black/20 transition-colors flex items-center justify-center group"
               >
                 <div className="bg-black/60 text-white p-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">

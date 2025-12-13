@@ -1,5 +1,5 @@
 import Image from 'next/image';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { Bookmark } from './BookmarkGrid';
 import BookmarkProgressBar, { BookmarkProcessStep } from './BookmarkProgressBar';
 
@@ -25,6 +25,9 @@ export function BookmarkCard({ bookmark, onClick, onRetry, onContextMenu, onDele
     }
   };
 
+  const thumIoFromPageUrl = (pageUrl: string) =>
+    `https://image.thum.io/get/width/1280/crop/720/noanimate/${encodeURIComponent(pageUrl)}`;
+
   const withCacheBust = (src: string, bust: number) => {
     try {
       const u = new URL(src);
@@ -37,28 +40,13 @@ export function BookmarkCard({ bookmark, onClick, onRetry, onContextMenu, onDele
     }
   };
 
-  // mShots returns a placeholder first ("Generating Preview...") then updates asynchronously.
-  // Next/Image can cache the placeholder via the optimizer, so we use <img> + cache-bust retries for mShots only.
-  const [mshotsBust, setMshotsBust] = useState<number>(0);
-  useEffect(() => {
-    const src = bookmark.thumbnail || '';
-    if (!isMShots(src)) return;
-    const bump = () => setMshotsBust(Date.now());
-    bump();
-    const t1 = setTimeout(bump, 1500);
-    const t2 = setTimeout(bump, 4000);
-    const t3 = setTimeout(bump, 8000);
-    const t4 = setTimeout(bump, 15000);
-    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(t4); };
-    // Re-run when thumbnail changes or when processing step advances.
-  }, [bookmark.thumbnail, bookmark.processingStep, bookmark.id]);
-
   const thumbnailSrc = useMemo(() => {
     const src = bookmark.thumbnail || '';
     if (!src) return '';
-    if (!isMShots(src)) return src;
-    return withCacheBust(src, mshotsBust || Date.now());
-  }, [bookmark.thumbnail, mshotsBust]);
+    // If backend previously stored an mShots URL, replace it with thum.io to avoid the "Generating Preview..." placeholder.
+    if (isMShots(src)) return thumIoFromPageUrl(bookmark.url);
+    return src;
+  }, [bookmark.thumbnail, bookmark.url]);
 
   const handleClick = () => {
     if (bookmark.status === 'error' || bookmark.status === 'loading') return;
