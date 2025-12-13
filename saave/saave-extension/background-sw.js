@@ -5,8 +5,8 @@ const DEFAULT_PROD_BASE = 'https://saave.io';
 let currentPopupPort = null;
 // Mémoriser l'onglet source (où afficher le toast de progression)
 let lastSourceTabId = null;
-// Fallback: succès si aucun événement n'arrive à temps
-let pendingSuccessTimer = null;
+// If no event arrives after click, show an error (never fake success)
+let pendingResultTimer = null;
 // Anti double-click + cancel polling
 let savingLockUntil = 0;
 let cancelRequested = false;
@@ -63,14 +63,14 @@ chrome.action.onClicked.addListener(async (tab) => {
   // 0) Toujours afficher "Saving page..." immédiatement (avant tout réseau)
   await sendNotification('start', 'Saving page...');
 
-  // Fallback UX: si aucune erreur après 2.5s, afficher "Bookmark added" (sans attendre les checks)
-  try { if (pendingSuccessTimer) clearTimeout(pendingSuccessTimer); } catch {}
-  pendingSuccessTimer = setTimeout(async () => {
+  // Timeout fallback: if we don't hear from Saave worker/app, show error (prevents fake success)
+  try { if (pendingResultTimer) clearTimeout(pendingResultTimer); } catch {}
+  pendingResultTimer = setTimeout(async () => {
     if (cancelRequested) return;
-    console.log('⏳ EXTENSION: Fallback success (no error after 2.5s) -> Bookmark added');
-    try { await sendNotification('success', 'Bookmark added'); } catch {}
-    try { showNotification('Saave', 'Bookmark added ✓'); } catch {}
-  }, 2500);
+    console.log('⏰ EXTENSION: No result event received within timeout');
+    try { await sendNotification('error', 'Unable to save (not connected?)'); } catch {}
+    try { showNotification('Saave', 'Unable to save — please login to saave.io'); } catch {}
+  }, 8000);
 
   // Anti double-click: if user clicks multiple times, keep showing loader but don't restart
   const now = Date.now();
@@ -125,10 +125,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Messages de l'app Saave (depuis l'onglet /app)
   if (message.type === 'bookmarkStarted') {
     console.log('✅ [EXT] Bookmark started notification from app:', message.id);
-    // Annuler le fallback timer car on a reçu une vraie notification
-    if (pendingSuccessTimer) {
-      clearTimeout(pendingSuccessTimer);
-      pendingSuccessTimer = null;
+    // We got a real signal, stop timeout timer
+    if (pendingResultTimer) {
+      clearTimeout(pendingResultTimer);
+      pendingResultTimer = null;
     }
     // Notifier le popup
     sendStepUpdateToPopup('started');
@@ -142,10 +142,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'saave:add-error' && (message.detail?.message === 'cancelled' || message.detail?.error === 'cancelled')) {
     console.log('🛑 EXTENSION: Cancel received from app, stopping polling and hiding notification');
     cancelRequested = true;
-    // Stop any pending fallback success
-    if (pendingSuccessTimer) {
-      try { clearTimeout(pendingSuccessTimer); } catch {}
-      pendingSuccessTimer = null;
+    // Stop any pending timeout
+    if (pendingResultTimer) {
+      try { clearTimeout(pendingResultTimer); } catch {}
+      pendingResultTimer = null;
     }
     if (lastSourceTabId) {
       try {
@@ -163,10 +163,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   // Generic progress from saave.io tab content-script
   if (message.type === 'saave:add-started' || message.type === 'saave:add-finished') {
-    // Stop fallback timer
-    if (pendingSuccessTimer) {
-      try { clearTimeout(pendingSuccessTimer); } catch {}
-      pendingSuccessTimer = null;
+    // Stop timeout timer
+    if (pendingResultTimer) {
+      try { clearTimeout(pendingResultTimer); } catch {}
+      pendingResultTimer = null;
     }
     if (lastSourceTabId) {
       sendToastToTab(lastSourceTabId, 'success', 'Bookmark saved')
@@ -180,9 +180,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === 'saave:add-error') {
     const msg = String(message.detail?.message || message.detail?.error || '');
-    if (pendingSuccessTimer) {
-      try { clearTimeout(pendingSuccessTimer); } catch {}
-      pendingSuccessTimer = null;
+    if (pendingResultTimer) {
+      try { clearTimeout(pendingResultTimer); } catch {}
+      pendingResultTimer = null;
     }
     if (lastSourceTabId) {
       if (msg === 'login_required') {
@@ -205,6 +205,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     try { showNotification('Saave', msg ? `Error: ${msg}` : 'Error'); } catch {}
     sendResponse({ received: true });
+    return true;
+  }
+
+  // Debug: confirm content-script is running (especially on /extensions/worker)
+  if (message.type === 'saave:content-ready') {
+    console.log('✅ EXTENSION: content script ready on', message.url);
+    sendResponse({ ok: true });
     return true;
   }
 });
@@ -308,7 +315,17 @@ async function resolveSaaveBase() {
   try {
     const stored = await chrome.storage.local.get(['saave_api_base']);
     const v = String(stored?.saave_api_base || '').trim();
-    if (v) return { base: v.replace(/\/$/, ''), mode: 'stored', port: null };
+    if (v) {
+      const base = v.replace(/\/$/, '');
+      // Avoid cookie host-only issues by preferring apex domain in production
+      try {
+        const u = new URL(base);
+        if (u.hostname === 'www.saave.io') {
+          return { base: 'https://saave.io', mode: 'stored_normalized', port: null };
+        }
+      } catch {}
+      return { base, mode: 'stored', port: null };
+    }
   } catch {}
   return { base: DEFAULT_PROD_BASE, mode: 'default', port: null };
 }

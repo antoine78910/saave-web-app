@@ -4,6 +4,9 @@
   let notificationContainer = null;
   let currentState = 'hidden';
 
+  // Let the background know this content-script is alive (useful for /extensions/worker debugging)
+  try { chrome.runtime.sendMessage({ type: 'saave:content-ready', url: location.href }); } catch {}
+
   const relay = (type) => (e) => {
     try { chrome.runtime.sendMessage({ type, detail: e.detail || {} }); } catch {}
   };

@@ -20,11 +20,14 @@ export default function ExtensionWorkerClient() {
 
   useEffect(() => {
     (async () => {
+      const closeSoon = () => setTimeout(() => { try { window.close(); } catch {} }, 250);
+
       if (!url || !isValidHttpUrl(url)) {
         setMessage('Invalid URL');
         try {
           window.dispatchEvent(new CustomEvent('saave:add-error', { detail: { message: 'invalid_url', url } }));
         } catch {}
+        closeSoon();
         return;
       }
 
@@ -36,6 +39,7 @@ export default function ExtensionWorkerClient() {
           try {
             window.dispatchEvent(new CustomEvent('saave:add-error', { detail: { message: 'login_required', url } }));
           } catch {}
+          closeSoon();
           return;
         }
       } catch {
@@ -43,6 +47,7 @@ export default function ExtensionWorkerClient() {
         try {
           window.dispatchEvent(new CustomEvent('saave:add-error', { detail: { message: 'network_error', url } }));
         } catch {}
+        closeSoon();
         return;
       }
 
@@ -59,6 +64,7 @@ export default function ExtensionWorkerClient() {
           try {
             window.dispatchEvent(new CustomEvent('saave:add-error', { detail: { message: 'duplicate', url } }));
           } catch {}
+          closeSoon();
           return;
         }
 
@@ -68,6 +74,7 @@ export default function ExtensionWorkerClient() {
           try {
             window.dispatchEvent(new CustomEvent('saave:add-error', { detail: { message: 'login_required', url } }));
           } catch {}
+          closeSoon();
           return;
         }
 
@@ -77,6 +84,7 @@ export default function ExtensionWorkerClient() {
           try {
             window.dispatchEvent(new CustomEvent('saave:add-error', { detail: { message: 'limit_reached', url } }));
           } catch {}
+          closeSoon();
           return;
         }
 
@@ -87,6 +95,7 @@ export default function ExtensionWorkerClient() {
           try {
             window.dispatchEvent(new CustomEvent('saave:add-error', { detail: { message: text || 'error', url } }));
           } catch {}
+          closeSoon();
           return;
         }
 
@@ -96,15 +105,13 @@ export default function ExtensionWorkerClient() {
           window.dispatchEvent(new CustomEvent('saave:add-started', { detail: { url } }));
         } catch {}
 
-        // Close the worker tab shortly after.
-        setTimeout(() => {
-          try { window.close(); } catch {}
-        }, 250);
+        closeSoon();
       } catch (e: any) {
         setMessage('Network error');
         try {
           window.dispatchEvent(new CustomEvent('saave:add-error', { detail: { message: 'network_error', url } }));
         } catch {}
+        closeSoon();
       }
     })();
   }, [url]);
