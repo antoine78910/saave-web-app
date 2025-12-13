@@ -17,11 +17,24 @@ export function BookmarkCard({ bookmark, onClick, onRetry, onContextMenu, onDele
 
   const isMShots = (src?: string | null) => {
     if (!src) return false;
+    const raw = String(src).trim();
+    // Handle protocol-relative or scheme-less stored URLs (common in older data)
+    if (raw.startsWith('//')) {
+      return (
+        raw.startsWith('//s.wordpress.com/mshots/v1/') ||
+        raw.startsWith('//s0.wp.com/mshots/v1/') ||
+        raw.startsWith('//i0.wp.com/s.wordpress.com/mshots/v1/')
+      );
+    }
+    if (raw.startsWith('s.wordpress.com/mshots/v1/') || raw.startsWith('s0.wp.com/mshots/v1/')) return true;
     try {
-      const u = new URL(src);
-      return u.hostname === 's.wordpress.com' && u.pathname.startsWith('/mshots/v1/');
+      const u = new URL(raw);
+      const host = u.hostname;
+      const path = u.pathname || '';
+      const isWpHost = host === 's.wordpress.com' || host === 's0.wp.com' || host.endsWith('.wp.com') || host.endsWith('wordpress.com');
+      return isWpHost && path.includes('/mshots/v1/');
     } catch {
-      return false;
+      return raw.includes('s.wordpress.com/mshots/v1/') || raw.includes('/mshots/v1/');
     }
   };
 
