@@ -1,10 +1,10 @@
 import { Suspense } from 'react';
-import ExtensionSaveClient from './save-client';
+import ExtensionWorkerClient from './worker-client';
 
-export default function ExtensionSavePage() {
+export default function ExtensionWorkerPage() {
   return (
     <Suspense fallback={<div className="min-h-screen bg-[#181a1b]" />}>
-      <ExtensionSaveClient />
+      <ExtensionWorkerClient />
     </Suspense>
   );
 }

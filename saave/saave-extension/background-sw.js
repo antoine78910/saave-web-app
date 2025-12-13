@@ -80,8 +80,8 @@ chrome.action.onClicked.addListener(async (tab) => {
   }
   savingLockUntil = now + 2500; // 2.5s lock window
 
-  // Trigger bookmark save via the webapp (reliable auth/cookies; avoids CORS issues)
-  console.log('💾 Starting bookmark save via webapp bridge...');
+  // Trigger bookmark save via a Saave same-origin worker page (backend call with cookies; no /app redirect)
+  console.log('💾 Starting bookmark save via Saave worker...');
   try {
     await handleSaveBookmarkFromPopup(tab.url, tab.title, () => {});
   } catch (e) {
@@ -291,8 +291,8 @@ async function handleSaveBookmarkFromPopup(url, title, sendResponse) {
     try { new URL(safeUrl); } catch { throw new Error('Invalid URL'); }
 
     const { base } = await resolveSaaveBase();
-    const bridgeUrl = `${base}/extensions/save?url=${encodeURIComponent(safeUrl)}&title=${encodeURIComponent(String(title || ''))}`;
-    await chrome.tabs.create({ url: bridgeUrl, active: false });
+    const workerUrl = `${base}/extensions/worker?url=${encodeURIComponent(safeUrl)}&title=${encodeURIComponent(String(title || ''))}`;
+    await chrome.tabs.create({ url: workerUrl, active: false });
 
     // Immediate response: the webapp will handle login/quota and will notify the extension via content-script events.
     try { sendResponse({ success: true, started: true }); } catch {}
@@ -314,7 +314,7 @@ async function resolveSaaveBase() {
 }
 
 // NOTE: We intentionally avoid calling Saave APIs from the extension service worker.
-// Auth is handled by the Saave webapp itself (same-origin), via /extensions/save?url=...
+// Auth/quota is handled by the Saave webapp itself (same-origin), via /extensions/worker?url=...
 
 // Fonction pour afficher les notifications
 function showNotification(title, message) {
