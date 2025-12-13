@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import Stripe from 'stripe';
 import { readFileSync, existsSync, writeFileSync } from 'fs';
 import { join } from 'path';
 
@@ -7,7 +8,19 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const email = searchParams.get('email');
     
-    console.log('🔧 GET /api/user/subscription [DEV MODE] - Email:', email);
+    const host = request.nextUrl.hostname || '';
+    const isLocalhost = host === 'localhost' || /\.localhost$/i.test(host);
+    const hasStripe = Boolean(process.env.STRIPE_SECRET_KEY);
+    const shouldUseStripe = hasStripe && !isLocalhost && process.env.NODE_ENV === 'production';
+    const isProd = process.env.NODE_ENV === 'production' && !isLocalhost;
+
+    // Optional production override: PRO_EMAILS="a@b.com,c@d.com"
+    const proEmails = String(process.env.PRO_EMAILS || '')
+      .split(',')
+      .map(s => s.trim().toLowerCase())
+      .filter(Boolean);
+
+    console.log(`🔧 GET /api/user/subscription - Email: ${email} | host=${host} | stripe=${shouldUseStripe}`);
     
     if (!email || email === 'No email') {
       console.log('📧 Email invalide, retour subscription par défaut');
@@ -18,8 +31,81 @@ export async function GET(request: NextRequest) {
         bookmarks_count: 0,
         plan: 'free',
         bookmarkLimit: 20,
-        dev_mode: true
+        dev_mode: false
       });
+    }
+
+    // Prod override first (useful when Stripe isn't configured yet)
+    if (isProd && proEmails.includes(String(email).toLowerCase())) {
+      return NextResponse.json({
+        plan: 'pro',
+        bookmarkLimit: -1,
+        customerId: null,
+        subscriptionId: null,
+        subscriptionStatus: 'active',
+        subscription_type: 'pro',
+        subscription_status: 'active',
+        bookmarks_limit: -1,
+        dev_mode: false,
+        override: 'PRO_EMAILS',
+      }, { status: 200 });
+    }
+
+    // --- PROD MODE (Stripe) ---
+    if (shouldUseStripe) {
+      try {
+        const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+        const customers = await stripe.customers.list({ email, limit: 1 });
+        const customer = customers.data?.[0] || null;
+        if (!customer) {
+          return NextResponse.json({
+            plan: 'free',
+            bookmarkLimit: 20,
+            customerId: null,
+            subscriptionId: null,
+            subscriptionStatus: 'none',
+            dev_mode: false,
+          }, { status: 200 });
+        }
+        const customerId = customer.id;
+        const subs = await stripe.subscriptions.list({ customer: customerId, status: 'all', limit: 10 });
+        const downgradeStatuses = new Set(['canceled', 'incomplete_expired']);
+        const best = subs.data?.find(s => !downgradeStatuses.has(s.status)) || null;
+        const status = best?.status || 'none';
+        const isPro = Boolean(best && !downgradeStatuses.has(status));
+        return NextResponse.json({
+          plan: isPro ? 'pro' : 'free',
+          bookmarkLimit: isPro ? -1 : 20,
+          customerId,
+          subscriptionId: best?.id || null,
+          subscriptionStatus: status,
+          // compat fields used elsewhere in the app
+          subscription_type: isPro ? 'pro' : 'free',
+          subscription_status: status,
+          bookmarks_limit: isPro ? -1 : 20,
+          dev_mode: false,
+        }, { status: 200 });
+      } catch (e) {
+        console.warn('⚠️ Stripe subscription lookup failed, falling back to dev mode:', e);
+        // Fallthrough to dev-mode logic below
+      }
+    }
+
+    // In production without Stripe config, do NOT use dev json fallbacks
+    if (isProd && !shouldUseStripe) {
+      console.warn('⚠️ Stripe not configured in production; returning free plan');
+      return NextResponse.json({
+        plan: 'free',
+        bookmarkLimit: 20,
+        customerId: null,
+        subscriptionId: null,
+        subscriptionStatus: 'none',
+        subscription_type: 'free',
+        subscription_status: 'none',
+        bookmarks_limit: 20,
+        dev_mode: false,
+        misconfigured: 'STRIPE_SECRET_KEY',
+      }, { status: 200 });
     }
     
     // Compter les vrais bookmarks de l'utilisateur

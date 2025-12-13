@@ -45,13 +45,13 @@ Le serveur Inngest Dev Server sera accessible sur `http://localhost:8288` par d�
 Quand vous lancez `inngest dev`, il vous demandera l'URL de votre serve endpoint. Entrez :
 
 ```
-http://app.localhost:5000/app/api/inngest
+http://app.localhost:5000/api/inngest
 ```
 
 ou
 
 ```
-http://localhost:5000/app/api/inngest
+http://localhost:5000/api/inngest
 ```
 
 ### Étape 5 : Accéder au dashboard Inngest local
@@ -80,7 +80,7 @@ ngrok http 5000
 
 3. Utilisez l'URL ngrok dans le dashboard Inngest :
 ```
-https://votre-url-ngrok.ngrok.io/app/api/inngest
+https://votre-url-ngrok.ngrok.io/api/inngest
 ```
 
 ### Option B : Utiliser Cloudflare Tunnel

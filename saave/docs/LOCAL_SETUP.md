@@ -39,13 +39,13 @@ L'application sera accessible sur :
 
 Pour Inngest en développement local, utilisez :
 ```
-http://app.localhost:5000/app/api/inngest
+http://app.localhost:5000/api/inngest
 ```
 
 ou
 
 ```
-http://localhost:5000/app/api/inngest
+http://localhost:5000/api/inngest
 ```
 
 **Note** : Pour tester Inngest en local avec le dashboard, consultez le guide complet dans [INNGEST_LOCAL_SETUP.md](./INNGEST_LOCAL_SETUP.md)

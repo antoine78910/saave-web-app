@@ -28,7 +28,7 @@ export async function middleware(req: NextRequest) {
 		const { data: { session } } = await supabase.auth.getSession()
 		console.log('Session in middleware:', !!session)
 
-		// Exclure les routes API de la protection (notamment /app/api/inngest pour Inngest)
+		// Exclure les routes API de la protection (notamment /api/inngest pour Inngest)
 		const isApiRoute = pathname.startsWith('/api/') || pathname.startsWith('/app/api/')
 
 		// Garde simple basée sur le chemin (pas de redirection cross‑host)

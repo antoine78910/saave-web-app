@@ -263,20 +263,21 @@ async function handleSaveBookmarkFromPopup(url, title, sendResponse) {
       }
     } catch {}
     
-    // Trouver le port Saave actif
-    const port = await findActiveSaavePort();
-    console.log('🔌 EXTENSION: Port Saave trouvé:', port);
+    // Résoudre la base API (localhost si dev, sinon prod https://saave.io)
+    const { base: apiBase, mode, port } = await resolveSaaveBase();
+    console.log('🔌 EXTENSION: Saave base résolue:', { apiBase, mode, port });
     
     // Obtenir l'utilisateur connecté (pour vérifier qu'il est connecté)
-    const user = await getCurrentUser(port);
+    const user = await getCurrentUser(apiBase);
     console.log('👤 EXTENSION: Utilisateur trouvé:', user);
     if (!user) {
       try {
         const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (activeTab?.id) {
-          await sendToastToTab(activeTab.id, 'login', `http://localhost:${port}/auth`);
+          await sendToastToTab(activeTab.id, 'error', 'Please login to Saave');
         }
       } catch {}
+      try { await chrome.tabs.create({ url: `${apiBase}/auth`, active: true }); } catch {}
       showNotification('Saave', 'Please login to save bookmarks');
       sendResponse({ success: false, error: 'login_required' });
       return;
@@ -293,14 +294,14 @@ async function handleSaveBookmarkFromPopup(url, title, sendResponse) {
 
     // 1. Obtenir le nombre de bookmarks AVANT de lancer le process
     console.log('📊 EXTENSION: Getting current bookmark count...');
-    const initialCount = await getBookmarkCount(port, user.id);
+    const initialCount = await getBookmarkCount(apiBase, user.id);
     console.log(`📊 EXTENSION: Initial bookmark count: ${initialCount}`);
 
     // NOTE: le "Saving page..." est déjà envoyé immédiatement depuis onClicked()
 
     // Vérifier (et lancer) le process via l'API, puis suivre la progression
     try {
-      const processResponse = await fetch(`http://localhost:${port}/api/bookmarks/process`, {
+      const processResponse = await fetch(`${apiBase}/api/bookmarks/process`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: url.trim(), user_id: user.id, source: 'extension' })
@@ -323,12 +324,14 @@ async function handleSaveBookmarkFromPopup(url, title, sendResponse) {
         console.log('❌ EXTENSION: Non connecté');
         sendResponse({ success: false, error: 'login_required' });
         showNotification('Saave', 'Connectez-vous pour sauvegarder');
+        try { await chrome.tabs.create({ url: `${apiBase}/auth`, active: true }); } catch {}
         return;
       }
       if (processResponse.status === 402 || processResponse.status === 403 || processData?.limit) {
         console.log('⚠️ EXTENSION: Limite atteinte (free plan)');
         sendResponse({ success: false, error: 'limit_reached' });
         showNotification('Saave', 'Limite atteinte — passez en Pro');
+        try { await chrome.tabs.create({ url: `${apiBase}/upgrade`, active: true }); } catch {}
         return;
       }
 
@@ -341,7 +344,7 @@ async function handleSaveBookmarkFromPopup(url, title, sendResponse) {
         sendResponse({ success: true, started: true, immediate: false });
 
         // Surveiller l'apparition de la carte (loading/scraping) en arrière-plan (step 1)
-        waitForBookmarkAddedStep1(port, user.id, url.trim(), 30000).then(async (result) => {
+        waitForBookmarkAddedStep1(apiBase, user.id, url.trim(), 30000).then(async (result) => {
           if (cancelRequested) {
             console.log('🛑 EXTENSION: Poll aborted (cancelRequested=true)');
             return;
@@ -403,12 +406,13 @@ async function handleSaveBookmarkFromPopup(url, title, sendResponse) {
     // Fallback: injection dans l'app (ancienne méthode)
     // Chercher ou créer un onglet Saave /app
     const tabs = await chrome.tabs.query({});
-    let saaveTab = tabs.find(tab => tab.url && tab.url.includes(`localhost:${port}/app`));
+    const host = (() => { try { return new URL(apiBase).host; } catch { return ''; } })();
+    let saaveTab = tabs.find(t => t.url && (host ? t.url.includes(host) : false) && /\/app(\b|\/|\?|#)/.test(t.url));
     
     if (!saaveTab) {
       console.log('📱 EXTENSION: Création d\'un nouvel onglet /app (en arrière-plan)');
       saaveTab = await chrome.tabs.create({
-        url: `http://localhost:${port}/app`,
+        url: `${apiBase}/app`,
         active: false
       });
       await new Promise(resolve => setTimeout(resolve, 3000));
@@ -470,7 +474,7 @@ async function handleSaveBookmarkFromPopup(url, title, sendResponse) {
   }
 }
 
-// Fonction pour trouver le port actif du serveur Saave
+// Fonction pour trouver le port actif du serveur Saave (local only)
 async function findActiveSaavePort() {
   for (const port of API_PORTS) {
     try {
@@ -512,10 +516,29 @@ async function findActiveSaavePort() {
   throw new Error('Aucun serveur Saave trouvé. Assurez-vous que l\'application Saave est lancée sur le port 5000 (ou 3000-3010).');
 }
 
-// Fonction pour obtenir le nombre total de bookmarks (inclut loading pour détecter +1 tôt)
-async function getBookmarkCount(port, userId) {
+// Resolve API base: localhost if running, otherwise stored base, otherwise https://saave.io
+async function resolveSaaveBase() {
+  // 1) Try local dev server
   try {
-    const response = await fetch(`http://localhost:${port}/api/bookmarks?user_id=${userId}`, {
+    const port = await findActiveSaavePort();
+    return { base: `http://localhost:${port}`, mode: 'local', port };
+  } catch (e) {}
+
+  // 2) Try configured base from extension storage
+  try {
+    const stored = await chrome.storage.local.get(['saave_api_base']);
+    const v = String(stored?.saave_api_base || '').trim();
+    if (v) return { base: v.replace(/\/$/, ''), mode: 'stored', port: null };
+  } catch {}
+
+  // 3) Default production base
+  return { base: 'https://saave.io', mode: 'default', port: null };
+}
+
+// Fonction pour obtenir le nombre total de bookmarks (inclut loading pour détecter +1 tôt)
+async function getBookmarkCount(apiBase, userId) {
+  try {
+    const response = await fetch(`${apiBase}/api/bookmarks?user_id=${encodeURIComponent(userId)}`, {
       credentials: 'include'
     });
     if (response.ok) {
@@ -553,7 +576,7 @@ function canonicalizeUrl(raw) {
   }
 }
 
-async function waitForBookmarkAddedStep1(port, userId, urlToSave, timeoutMs = 12000) {
+async function waitForBookmarkAddedStep1(apiBase, userId, urlToSave, timeoutMs = 12000) {
   const startTime = Date.now();
   let checkCount = 0;
   let failedCount = 0;
@@ -570,7 +593,7 @@ async function waitForBookmarkAddedStep1(port, userId, urlToSave, timeoutMs = 12
 
     let data = null;
     try {
-      const res = await fetch(`http://localhost:${port}/api/bookmarks?user_id=${encodeURIComponent(userId)}`, { credentials: 'include' });
+      const res = await fetch(`${apiBase}/api/bookmarks?user_id=${encodeURIComponent(userId)}`, { credentials: 'include' });
       if (!res.ok) throw new Error(`status_${res.status}`);
       data = await res.json();
     } catch (e) {
@@ -598,10 +621,10 @@ async function waitForBookmarkAddedStep1(port, userId, urlToSave, timeoutMs = 12
 }
 
 // Fonction pour obtenir l'utilisateur connecté
-async function getCurrentUser(port) {
+async function getCurrentUser(apiBase) {
   try {
     console.log('🔍 Recherche de l\'utilisateur connecté...');
-    console.log('🔧 Port Saave utilisé:', port);
+    console.log('🔧 Base Saave utilisée:', apiBase);
     
     // Vérifier dans le storage local de l'extension d'abord
     console.log('📦 Vérification du cache extension...');
@@ -619,7 +642,8 @@ async function getCurrentUser(port) {
     
     console.log('❌ Aucun utilisateur dans le cache, recherche dans les onglets...');
     const tabs = await chrome.tabs.query({});
-    const saaveTab = tabs.find(tab => tab.url && tab.url.includes(`localhost:${port}`));
+    const host = (() => { try { return new URL(apiBase).host; } catch { return ''; } })();
+    const saaveTab = tabs.find(tab => tab.url && (host ? tab.url.includes(host) : false));
     
     if (saaveTab) {
       console.log('🎯 Onglet Saave trouvé, extraction de l\'utilisateur...');
@@ -681,7 +705,7 @@ async function getCurrentUser(port) {
     // Fallback: appeler l'API profil avec credentials pour récupérer l'utilisateur
     try {
       console.log('🌐 Tentative /api/user/profile avec credentials');
-      const profileRes = await fetch(`http://localhost:${port}/api/user/profile`, {
+      const profileRes = await fetch(`${apiBase}/api/user/profile`, {
         method: 'GET',
         credentials: 'include',
       });
@@ -813,10 +837,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // Gestionnaire de clic sur les notifications
 if (chrome.notifications && chrome.notifications.onClicked) {
   chrome.notifications.onClicked.addListener(async (notificationId) => {
-    if (notificationId.startsWith('saave-login-required')) {
-      const port = notificationId.split('-').pop();
-      if (port && !isNaN(port)) {
-        chrome.tabs.create({ url: `http://localhost:${port}` });
+    if (notificationId.startsWith('saave-login-required') || notificationId.startsWith('saave-open-login')) {
+      try {
+        const { base } = await resolveSaaveBase();
+        await chrome.tabs.create({ url: `${base}/auth`, active: true });
+      } catch {
+        await chrome.tabs.create({ url: 'https://saave.io/auth', active: true });
       }
     }
   });
