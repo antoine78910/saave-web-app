@@ -5,7 +5,8 @@ const DEFAULT_PROD_BASE = 'https://saave.io';
 let currentPopupPort = null;
 // Mémoriser l'onglet source (où afficher le toast de progression)
 let lastSourceTabId = null;
-// If no event arrives after click, show an error (never fake success)
+// We used to show a fallback "not connected" error if no event arrived.
+// Now we call the API directly, so this timer can create false negatives on slow saves.
 let pendingResultTimer = null;
 // Anti double-click + cancel polling
 let savingLockUntil = 0;
@@ -63,14 +64,9 @@ chrome.action.onClicked.addListener(async (tab) => {
   // 0) Toujours afficher "Saving page..." immédiatement (avant tout réseau)
   await sendNotification('start', 'Saving page...');
 
-  // Timeout fallback: if we don't hear from Saave worker/app, show error (prevents fake success)
+  // NOTE: no generic timeout error here; we only show errors based on actual API responses.
   try { if (pendingResultTimer) clearTimeout(pendingResultTimer); } catch {}
-  pendingResultTimer = setTimeout(async () => {
-    if (cancelRequested) return;
-    console.log('⏰ EXTENSION: No result event received within timeout');
-    try { await sendNotification('error', 'Unable to save (not connected?)'); } catch {}
-    try { showNotification('Saave', 'Unable to save — please login to saave.io'); } catch {}
-  }, 8000);
+  pendingResultTimer = null;
 
   // Anti double-click: if user clicks multiple times, keep showing loader but don't restart
   const now = Date.now();

@@ -143,9 +143,18 @@ export async function POST(req) {
     const dataUrl = `data:image/jpeg;base64,${Buffer.from(screenshotBuffer).toString('base64')}`
     return NextResponse.json({ success: true, filename, url: dataUrl, source: 'data-url' })
   } catch (e) {
+    // Vercel frequently cannot run headless Chromium due to missing system libs (ex: libnss3.so).
+    // Don't fail the whole bookmark pipeline: return a remote screenshot URL fallback.
+    const msg = (e && e.message) ? e.message : String(e || 'unknown_error');
     console.error('❌ Erreur screenshot:', e);
-    return NextResponse.json({ 
-      error: e.message 
-    }, { status: 500 });
+    const fallbackUrl = `https://s.wordpress.com/mshots/v1/${encodeURIComponent(String(url))}?w=1280`;
+    console.warn('🟡 Screenshot fallback used:', { fallbackUrl, error: msg });
+    return NextResponse.json({
+      success: true,
+      filename,
+      url: fallbackUrl,
+      source: 'mshots-fallback',
+      warning: 'chromium_unavailable',
+    }, { status: 200 });
   }
 }
