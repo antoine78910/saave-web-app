@@ -214,6 +214,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ ok: true });
     return true;
   }
+
+  // Token cache notification from saave.io content script
+  if (message.type === 'saave:token') {
+    console.log('🔑 EXTENSION: token refresh signal received from content script');
+    sendResponse({ ok: true });
+    return true;
+  }
 });
 
 // Gestionnaire de connexion pour le popup

@@ -12,6 +12,26 @@
     const host = String(location.hostname || '');
     const isSaave = host === 'saave.io' || host === 'www.saave.io' || host.endsWith('.saave.io');
     if (isSaave) {
+      // Preferred: ask same-origin endpoint (cookie-based sessions)
+      try {
+        fetch('/api/auth/token', { method: 'GET', credentials: 'include' })
+          .then((r) => r.ok ? r.json() : null)
+          .then((data) => {
+            if (data && data.access_token) {
+              chrome.storage.local.set({
+                saave_access_token: data.access_token,
+                saave_token_expires_at: data.expires_at || null,
+                saave_token_cached_at: new Date().toISOString(),
+                saave_token_source: 'api/auth/token',
+              }).catch(() => {});
+              try { chrome.runtime.sendMessage({ type: 'saave:token', ok: true }); } catch {}
+              return;
+            }
+          })
+          .catch(() => {});
+      } catch {}
+
+      // Fallback: localStorage scan (only works if supabase stores there)
       const keys = Object.keys(localStorage || {}).filter((k) => k.startsWith('sb-') && k.endsWith('-auth-token'));
       for (const k of keys) {
         try {
@@ -27,6 +47,7 @@
               saave_token_source: k,
               saave_token_cached_at: new Date().toISOString(),
             }).catch(() => {});
+            try { chrome.runtime.sendMessage({ type: 'saave:token', ok: true }); } catch {}
             break;
           }
         } catch {}
