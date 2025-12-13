@@ -369,6 +369,19 @@ export async function POST(request: Request) {
 				await putJsonToR2(key, [saved, ...list.filter((b: any) => b.id !== saved.id)])
 			}
 
+			// If cancel happened during/after the save step, immediately rollback the created bookmark
+			// so both backend & frontend stop and no bookmark "carcass" remains.
+			if (await isProcessingCancelled(userId, id)) {
+				console.log('🚫 Cancel detected after save; rolling back bookmark')
+				try {
+					if (saved?.id) {
+						await supabase.from('bookmarks').delete().eq('id', saved.id).eq('user_id', userId)
+					}
+				} catch {}
+				try { await removeProcessingItem(userId, id) } catch {}
+				return NextResponse.json({ ok: false, cancelled: true, rolledBack: true }, { status: 200, headers: { ...corsHeaders() as any } })
+			}
+
 			// 8) Done
 			await append(userId, { ...seed, processingStep: 'finished', status: 'complete', title, description, favicon, tags, thumbnail })
 			console.log('✅ BOOKMARK SAVED SUCCESSFULLY')

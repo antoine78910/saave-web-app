@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import chromium from "@sparticuz/chromium";
 import puppeteerCore from "puppeteer-core";
 import fs from "fs";
+import path from "path";
 import { uploadScreenshotBufferToR2 } from "../../../lib/r2";
 
 export const dynamic = "force-dynamic";
@@ -55,6 +56,14 @@ export async function POST(req) {
 
     if (!browser) {
     const executablePath = (await chromium.executablePath()) || '/usr/bin/chromium';
+    // Ensure shared libs shipped with @sparticuz/chromium are discoverable (fixes libnss3.so missing on some runtimes)
+    try {
+      const dir = path.dirname(executablePath);
+      const libDir = path.join(dir, 'lib');
+      const libsDir = path.join(dir, 'libs');
+      const prev = process.env.LD_LIBRARY_PATH || '';
+      process.env.LD_LIBRARY_PATH = [libDir, libsDir, dir, prev].filter(Boolean).join(':');
+    } catch {}
     console.log('ℹ️ Using @sparticuz/chromium at', executablePath, 'on', process.platform);
     browser = await puppeteerCore.launch({
       args: [...(chromium.addArguments ? chromium.addArguments([]) : (chromium.args || [])), '--no-sandbox', '--disable-setuid-sandbox', '--hide-scrollbars', '--remote-debugging-port=0'], // Use random port
