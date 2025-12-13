@@ -16,6 +16,21 @@ export async function POST(req) {
   }
   const filename = `screenshot_${Date.now()}.jpg`;
   try {
+    // On Vercel serverless, launching Chromium often fails due to missing shared libs (ex: libnss3.so).
+    // Default to a remote screenshot provider unless explicitly enabled.
+    const isVercel = process.env.VERCEL === '1';
+    const enableHeadlessOnServerless = process.env.ENABLE_HEADLESS_BROWSER === '1';
+    if (isVercel && !enableHeadlessOnServerless) {
+      const fallbackUrl = `https://image.thum.io/get/width/1280/crop/720/noanimate/${encodeURIComponent(String(url))}`;
+      return NextResponse.json({
+        success: true,
+        filename,
+        url: fallbackUrl,
+        source: 'thumio',
+        warning: 'headless_disabled_on_vercel',
+      }, { status: 200 });
+    }
+
     console.log('📸 Prise de screenshot RÉEL pour:', url);
 
     let browser = null;

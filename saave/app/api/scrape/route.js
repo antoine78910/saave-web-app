@@ -1,8 +1,5 @@
 import { NextResponse } from "next/server";
-import chromium from "@sparticuz/chromium";
-import puppeteer from "puppeteer-core";
-import fs from "fs";
-import path from "path";
+import { load } from "cheerio";
 
 export const dynamic = "force-dynamic";
 
@@ -17,126 +14,67 @@ export async function POST(req) {
   }
   
   try {
-    let browser = null;
+    // Vercel/serverless friendly scrape: no headless browser required.
+    const REQUEST_TIMEOUT_MS = Number(process.env.SCRAPE_TIMEOUT_MS || 15000);
+    const controller = new AbortController();
+    const to = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-    // IMPORTANT: Always use bundled Chromium from puppeteer, NEVER user's Chrome
-    // This prevents closing the user's browser window
-    if (process.platform === 'win32' || process.env.NODE_ENV !== 'production') {
-      try {
-        const maybePuppeteer = await import('puppeteer');
-        const pptr = maybePuppeteer.default || maybePuppeteer;
-        const pptrExecutablePath = typeof pptr.executablePath === 'function' ? pptr.executablePath() : undefined;
-        
-        // Verify it's the bundled Chromium, not system Chrome
-        if (pptrExecutablePath && !pptrExecutablePath.includes('.cache\\puppeteer') && !pptrExecutablePath.includes('.cache/puppeteer') && !pptrExecutablePath.includes('node_modules')) {
-          console.warn('⚠️ WARNING: executablePath might be system Chrome, forcing bundled Chromium');
-          // Force bundled Chromium by not specifying executablePath
-        browser = await pptr.launch({
-          headless: 'new',
-            // Don't specify executablePath - let puppeteer use its bundled Chromium
-          pipe: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--remote-debugging-port=0'], // Use random port, not pipe
-          });
-        } else {
-          // Use bundled Chromium
-          browser = await pptr.launch({
-            headless: 'new',
-            executablePath: pptrExecutablePath, // This is bundled Chromium
-            pipe: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--remote-debugging-port=0'], // Use random port, not pipe
-          });
-        }
-        console.log('🚀 Launched puppeteer (bundled Chromium)');
-      } catch (e) {
-        console.warn('⚠️ puppeteer not available, using @sparticuz/chromium instead:', e?.message);
-      }
-    }
+    const resp = await fetch(String(url), {
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+      redirect: 'follow',
+      signal: controller.signal,
+    });
 
-    if (!browser) {
-      const executablePath = (await chromium.executablePath()) || '/usr/bin/chromium';
-      // Ensure shared libs shipped with @sparticuz/chromium are discoverable (fixes libnss3.so missing on some runtimes)
-      try {
-        const dir = path.dirname(executablePath);
-        const libDir = path.join(dir, 'lib');
-        const libsDir = path.join(dir, 'libs');
-        const prev = process.env.LD_LIBRARY_PATH || '';
-        process.env.LD_LIBRARY_PATH = [libDir, libsDir, dir, prev].filter(Boolean).join(':');
-      } catch {}
-      browser = await puppeteer.launch({
-        args: [...chromium.args, '--remote-debugging-port=0'], // Use random port
-        defaultViewport: chromium.defaultViewport,
-        executablePath,
-        headless: chromium.headless,
-        pipe: true,
-      });
-    }
-    const page = await browser.newPage();
-    
-    // Naviguer vers la page
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
-    
-    // 1. Scraping du contenu et métadonnées
-    const metadata = await page.evaluate(() => {
-      // Extraction du titre
-      const title = document.title || document.querySelector('h1')?.textContent || '';
-      
-      // Extraction de la description
-      const metaDescription = document.querySelector('meta[name="description"]')?.getAttribute('content') || 
-                             document.querySelector('meta[property="og:description"]')?.getAttribute('content') || '';
-      
-      // Extraction du contenu principal (texte visible)
-      function getVisibleText() {
-        const bodyText = document.body.innerText;
-        return bodyText.substring(0, 1000); // Limiter pour éviter les données trop volumineuses
-      }
-      
-      // Extraction des mots-clés/tags
-      const keywords = document.querySelector('meta[name="keywords"]')?.getAttribute('content') || '';
-      const tags = keywords.split(',')
-        .map(tag => tag.trim())
-        .filter(tag => tag.length > 0 && tag.length < 20)
-        .slice(0, 5);  // Limiter à 5 tags
-      
-      // Extraction des liens
-      const links = Array.from(document.querySelectorAll('a[href]'))
-        .map(a => a.href)
-        .filter(href => href.startsWith('http'))
-        .slice(0, 10);  // Limiter à 10 liens
-        
-      return {
-        title,
-        description: metaDescription,
-        content: getVisibleText(),
-        tags,
-        links,
-        url: document.URL
-      };
-    });
-    
-    // 2. Analyse du contenu pour générer un résumé
-    const summary = await page.evaluate(() => {
-      // Chercher les sections importantes (paragraphes non vides)
-      const paragraphs = Array.from(document.querySelectorAll('p'))
-        .map(p => p.textContent.trim())
-        .filter(text => text.length > 50)  // Paragraphes substantiels uniquement
-        .slice(0, 3);  // Prendre les 3 premiers paragraphes significatifs
-        
-      return paragraphs.join('\n\n').substring(0, 500); // Limiter la longueur totale
-    });
-    
-    // Fermer le navigateur
-    await browser.close();
-    
+    const html = resp.ok ? await resp.text() : '';
+    clearTimeout(to);
+
+    const $ = load(html || '');
+    // remove noisy nodes
+    $('script, style, noscript, svg').remove();
+
+    const title = $('meta[property="og:title"]').attr('content') || $('title').text() || $('h1').first().text() || '';
+    const description =
+      $('meta[property="og:description"]').attr('content') ||
+      $('meta[name="description"]').attr('content') ||
+      $('meta[name="twitter:description"]').attr('content') ||
+      '';
+
+    const keywords = $('meta[name="keywords"]').attr('content') || '';
+    const tags = keywords
+      .split(',')
+      .map(t => t.trim().toLowerCase())
+      .filter(t => t.length > 0 && t.length < 24)
+      .slice(0, 5);
+
+    const links = $('a[href]')
+      .map((_, a) => $(a).attr('href'))
+      .get()
+      .map(href => String(href || '').trim())
+      .filter(href => /^https?:\/\//i.test(href))
+      .slice(0, 10);
+
+    const text = $('body').text().replace(/\s\s+/g, ' ').trim();
+    const content = text.substring(0, 1000);
+
+    // crude summary: first 2-3 substantial sentences
+    const sentences = content.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 40);
+    const summary = sentences.slice(0, 3).join('. ').substring(0, 500);
+
     return NextResponse.json({
       success: true,
-      title: metadata.title,
-      description: metadata.description || summary.substring(0, 150),
-      content: metadata.content,
-      summary: summary || metadata.description,
-      tags: metadata.tags,
-      links: metadata.links,
-      url: metadata.url
-    });
+      title: String(title || '').trim(),
+      description: String(description || '').trim() || summary.substring(0, 150),
+      content,
+      summary: summary || String(description || '').trim(),
+      tags,
+      links,
+      url: String(url),
+    }, { status: 200 });
     
   } catch (e) {
     console.error("Erreur lors du scraping:", e);
