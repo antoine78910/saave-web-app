@@ -7,6 +7,33 @@
   // Let the background know this content-script is alive (useful for /extensions/worker debugging)
   try { chrome.runtime.sendMessage({ type: 'saave:content-ready', url: location.href }); } catch {}
 
+  // If we're on saave.io, try to cache the Supabase access token for background API calls.
+  try {
+    const host = String(location.hostname || '');
+    const isSaave = host === 'saave.io' || host === 'www.saave.io' || host.endsWith('.saave.io');
+    if (isSaave) {
+      const keys = Object.keys(localStorage || {}).filter((k) => k.startsWith('sb-') && k.endsWith('-auth-token'));
+      for (const k of keys) {
+        try {
+          const raw = localStorage.getItem(k);
+          if (!raw) continue;
+          const data = JSON.parse(raw);
+          const access = data?.access_token || data?.currentSession?.access_token || data?.session?.access_token;
+          const exp = data?.expires_at || data?.currentSession?.expires_at || data?.session?.expires_at;
+          if (access) {
+            chrome.storage.local.set({
+              saave_access_token: access,
+              saave_token_expires_at: exp || null,
+              saave_token_source: k,
+              saave_token_cached_at: new Date().toISOString(),
+            }).catch(() => {});
+            break;
+          }
+        } catch {}
+      }
+    }
+  } catch {}
+
   const relay = (type) => (e) => {
     try { chrome.runtime.sendMessage({ type, detail: e.detail || {} }); } catch {}
   };

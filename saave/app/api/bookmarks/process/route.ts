@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
+import { createClient } from '@supabase/supabase-js'
 import { getJsonFromR2, putJsonToR2 } from '@/lib/r2'
 import { getProcessingList, upsertProcessingItem, removeProcessingItem, isProcessingCancelled } from '@/lib/processing-store'
 import { inngest } from '@/lib/inngest'
@@ -14,7 +15,7 @@ function corsHeaders() {
 	return {
 		'Access-Control-Allow-Origin': '*',
 		'Access-Control-Allow-Methods': 'POST, OPTIONS',
-		'Access-Control-Allow-Headers': 'Content-Type',
+		'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 		'Access-Control-Max-Age': '86400',
 	}
 }
@@ -45,13 +46,38 @@ export async function POST(request: Request) {
 		}
 
 		const reqUrl = new URL(request.url)
-		const cookieStore = await cookies()
-		const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
-		const { data: { session } } = await supabase.auth.getSession()
+		const authHeader = request.headers.get('authorization') || request.headers.get('Authorization') || ''
+		const token = authHeader.toLowerCase().startsWith('bearer ') ? authHeader.slice(7).trim() : ''
 
-		userId = session?.user?.id ?? ''
+		// Auth path A (extension / API clients): Authorization: Bearer <access_token>
+		// This avoids cross-site cookie issues and removes the need to open a Saave tab.
+		let supabase: any = null
+		if (token) {
+			const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+			const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+			if (!url || !anon) {
+				return NextResponse.json({ error: 'supabase_not_configured' }, { status: 500, headers: corsHeaders() as any })
+			}
+			supabase = createClient(url, anon, {
+				auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+				global: { headers: { Authorization: `Bearer ${token}` } },
+			})
+			const { data: u, error: uErr } = await supabase.auth.getUser()
+			userId = u?.user?.id || ''
+			if (uErr || !userId) {
+				return NextResponse.json({ error: 'unauthorized' }, { status: 401, headers: corsHeaders() as any })
+			}
+		} else {
+			// Auth path B (webapp): cookie-based session
+			const cookieStore = await cookies()
+			supabase = createRouteHandlerClient({ cookies: () => cookieStore })
+			const { data: { session } } = await supabase.auth.getSession()
+			userId = session?.user?.id ?? ''
+		}
+
 		const isLocalhost = reqUrl.hostname === 'localhost' || /\.localhost$/i.test(reqUrl.hostname)
-		if (!userId && userIdFromBody && (process.env.NODE_ENV !== 'production' || isLocalhost || source === 'extension')) {
+		// Legacy dev fallback only (never trust user_id in production)
+		if (!userId && userIdFromBody && (process.env.NODE_ENV !== 'production' || isLocalhost)) {
 			userId = String(userIdFromBody)
 		}
 		if (!userId) {

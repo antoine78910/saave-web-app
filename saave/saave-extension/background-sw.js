@@ -80,8 +80,8 @@ chrome.action.onClicked.addListener(async (tab) => {
   }
   savingLockUntil = now + 2500; // 2.5s lock window
 
-  // Trigger bookmark save via a Saave same-origin worker page (backend call with cookies; no /app redirect)
-  console.log('💾 Starting bookmark save via Saave worker...');
+  // Trigger bookmark save directly via API (no tab opened)
+  console.log('💾 Starting bookmark save via API (no tab)...');
   try {
     await handleSaveBookmarkFromPopup(tab.url, tab.title, () => {});
   } catch (e) {
@@ -208,7 +208,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  // Debug: confirm content-script is running (especially on /extensions/worker)
+  // Debug: confirm content-script is running (especially on saave.io)
   if (message.type === 'saave:content-ready') {
     console.log('✅ EXTENSION: content script ready on', message.url);
     sendResponse({ ok: true });
@@ -298,10 +298,90 @@ async function handleSaveBookmarkFromPopup(url, title, sendResponse) {
     try { new URL(safeUrl); } catch { throw new Error('Invalid URL'); }
 
     const { base } = await resolveSaaveBase();
-    const workerUrl = `${base}/extensions/worker?url=${encodeURIComponent(safeUrl)}&title=${encodeURIComponent(String(title || ''))}`;
-    await chrome.tabs.create({ url: workerUrl, active: false });
+    const apiUrl = `${base}/api/bookmarks/process`;
 
-    // Immediate response: the webapp will handle login/quota and will notify the extension via content-script events.
+    // Need a cached Supabase access token from a logged-in saave.io tab.
+    const { saave_access_token } = await chrome.storage.local.get(['saave_access_token']);
+    const token = String(saave_access_token || '').trim();
+    if (!token) {
+      if (lastSourceTabId) {
+        sendToastToTab(lastSourceTabId, 'login', 'Login to Saave to save', { target: 'login', buttonText: 'Login' })
+          .catch(() => {});
+      }
+      try { sendResponse({ success: false, error: 'login_required' }); } catch {}
+      return;
+    }
+
+    // Call API with Bearer token (CORS enabled server-side)
+    let res;
+    try {
+      res = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ url: safeUrl, source: 'extension' }),
+      });
+    } catch (e) {
+      if (lastSourceTabId) {
+        sendToastToTab(lastSourceTabId, 'error', 'Network error')
+          .catch(() => {});
+      }
+      try { sendResponse({ success: false, error: 'network_error' }); } catch {}
+      return;
+    }
+
+    if (res.status === 401) {
+      // token invalid/expired
+      try { await chrome.storage.local.remove(['saave_access_token']); } catch {}
+      if (lastSourceTabId) {
+        sendToastToTab(lastSourceTabId, 'login', 'Login to Saave to save', { target: 'login', buttonText: 'Login' })
+          .catch(() => {});
+      }
+      try { sendResponse({ success: false, error: 'login_required' }); } catch {}
+      return;
+    }
+
+    if (res.status === 409) {
+      if (lastSourceTabId) {
+        sendToastToTab(lastSourceTabId, 'duplicate', 'Already saved')
+          .catch(() => {});
+      }
+      try { sendResponse({ success: false, error: 'duplicate' }); } catch {}
+      return;
+    }
+
+    if (res.status === 402 || res.status === 403) {
+      if (lastSourceTabId) {
+        sendToastToTab(lastSourceTabId, 'upgrade', 'Free plan limit reached (20). Upgrade to Pro.', { target: 'upgrade', buttonText: 'Upgrade' })
+          .catch(() => {});
+      }
+      try { sendResponse({ success: false, error: 'limit_reached' }); } catch {}
+      return;
+    }
+
+    if (!res.ok) {
+      let text = '';
+      try { text = await res.text(); } catch {}
+      if (lastSourceTabId) {
+        sendToastToTab(lastSourceTabId, 'error', text || 'Failed to save')
+          .catch(() => {});
+      }
+      try { sendResponse({ success: false, error: 'failed' }); } catch {}
+      return;
+    }
+
+    // Success: process started
+    if (pendingResultTimer) {
+      try { clearTimeout(pendingResultTimer); } catch {}
+      pendingResultTimer = null;
+    }
+    if (lastSourceTabId) {
+      sendToastToTab(lastSourceTabId, 'success', 'Bookmark saved')
+        .catch(() => {});
+    }
+    try { showNotification('Saave', 'Bookmark saved ✅'); } catch {}
     try { sendResponse({ success: true, started: true }); } catch {}
     
   } catch (error) {
@@ -330,8 +410,7 @@ async function resolveSaaveBase() {
   return { base: DEFAULT_PROD_BASE, mode: 'default', port: null };
 }
 
-// NOTE: We intentionally avoid calling Saave APIs from the extension service worker.
-// Auth/quota is handled by the Saave webapp itself (same-origin), via /extensions/worker?url=...
+// NOTE: We call Saave APIs directly with a Supabase access token cached from a logged-in saave.io tab.
 
 // Fonction pour afficher les notifications
 function showNotification(title, message) {
